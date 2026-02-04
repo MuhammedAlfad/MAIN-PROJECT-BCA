@@ -1,0 +1,10 @@
+{
+  "extends": "next/base",
+  "compilerOptions": {
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
+  }
+}
