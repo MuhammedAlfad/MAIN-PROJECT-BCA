@@ -1,4 +1,6 @@
-from typing import List, Dict
+from typing import List, Dict, Optional, Tuple
+from math import radians, sin, cos, sqrt, atan2
+import requests
 from app.models.trip import PlaceRecommendation
 
 # Sample place database - in production, use a real API
@@ -172,21 +174,353 @@ PLACES_DATABASE = {
             "category": "Monument",
             "image_url": "https://via.placeholder.com/300?text=Gateway+of+India"
         }
+    ],
+    "boston": [
+        {
+            "name": "Freedom Trail",
+            "description": "Historic walking trail through downtown Boston",
+            "coordinates": {"lat": 42.3598, "lng": -71.0585},
+            "rating": 4.6,
+            "category": "Historic Site",
+            "image_url": "https://via.placeholder.com/300?text=Freedom+Trail"
+        },
+        {
+            "name": "Fenway Park",
+            "description": "Historic baseball stadium and home of Red Sox",
+            "coordinates": {"lat": 42.3466, "lng": -71.0972},
+            "rating": 4.7,
+            "category": "Stadium",
+            "image_url": "https://via.placeholder.com/300?text=Fenway+Park"
+        },
+        {
+            "name": "Boston Common",
+            "description": "America's oldest public park",
+            "coordinates": {"lat": 42.3550, "lng": -71.0656},
+            "rating": 4.5,
+            "category": "Park",
+            "image_url": "https://via.placeholder.com/300?text=Boston+Common"
+        },
+        {
+            "name": "Harvard University",
+            "description": "Ivy League university in Cambridge",
+            "coordinates": {"lat": 42.3770, "lng": -71.1167},
+            "rating": 4.8,
+            "category": "University",
+            "image_url": "https://via.placeholder.com/300?text=Harvard"
+        }
+    ],
+    "london": [
+        {
+            "name": "Big Ben",
+            "description": "Iconic clock tower at Westminster",
+            "coordinates": {"lat": 51.5007, "lng": -0.1246},
+            "rating": 4.6,
+            "category": "Landmark",
+            "image_url": "https://via.placeholder.com/300?text=Big+Ben"
+        },
+        {
+            "name": "Tower Bridge",
+            "description": "Victorian Gothic bridge over Thames",
+            "coordinates": {"lat": 51.5055, "lng": -0.0754},
+            "rating": 4.7,
+            "category": "Bridge",
+            "image_url": "https://via.placeholder.com/300?text=Tower+Bridge"
+        },
+        {
+            "name": "British Museum",
+            "description": "World history and culture museum",
+            "coordinates": {"lat": 51.5194, "lng": -0.1270},
+            "rating": 4.8,
+            "category": "Museum",
+            "image_url": "https://via.placeholder.com/300?text=British+Museum"
+        },
+        {
+            "name": "Buckingham Palace",
+            "description": "Official residence of the British monarch",
+            "coordinates": {"lat": 51.5014, "lng": -0.1419},
+            "rating": 4.5,
+            "category": "Palace",
+            "image_url": "https://via.placeholder.com/300?text=Buckingham+Palace"
+        }
+    ],
+    "dubai": [
+        {
+            "name": "Burj Khalifa",
+            "description": "World's tallest building",
+            "coordinates": {"lat": 25.1972, "lng": 55.2744},
+            "rating": 4.8,
+            "category": "Skyscraper",
+            "image_url": "https://via.placeholder.com/300?text=Burj+Khalifa"
+        },
+        {
+            "name": "Dubai Mall",
+            "description": "One of the world's largest shopping malls",
+            "coordinates": {"lat": 25.1972, "lng": 55.2794},
+            "rating": 4.6,
+            "category": "Shopping",
+            "image_url": "https://via.placeholder.com/300?text=Dubai+Mall"
+        },
+        {
+            "name": "Palm Jumeirah",
+            "description": "Artificial archipelago in Palm shape",
+            "coordinates": {"lat": 25.1125, "lng": 55.1399},
+            "rating": 4.7,
+            "category": "Landmark",
+            "image_url": "https://via.placeholder.com/300?text=Palm+Jumeirah"
+        },
+        {
+            "name": "Dubai Fountain",
+            "description": "Choreographed fountain show outside Dubai Mall",
+            "coordinates": {"lat": 25.1972, "lng": 55.2744},
+            "rating": 4.5,
+            "category": "Attraction",
+            "image_url": "https://via.placeholder.com/300?text=Dubai+Fountain"
+        }
+    ],
+    "brazil": [
+        {
+            "name": "Christ the Redeemer",
+            "description": "Iconic statue overlooking Rio de Janeiro",
+            "coordinates": {"lat": -22.9519, "lng": -43.2105},
+            "rating": 4.8,
+            "category": "Monument",
+            "image_url": "https://via.placeholder.com/300?text=Christ+the+Redeemer"
+        },
+        {
+            "name": "Sugarloaf Mountain",
+            "description": "Granite peak with panoramic views of Rio",
+            "coordinates": {"lat": -22.9496, "lng": -43.1548},
+            "rating": 4.7,
+            "category": "Landmark",
+            "image_url": "https://via.placeholder.com/300?text=Sugarloaf+Mountain"
+        },
+        {
+            "name": "Iguazu Falls",
+            "description": "Massive waterfall system on the Brazil-Argentina border",
+            "coordinates": {"lat": -25.6953, "lng": -54.4367},
+            "rating": 4.9,
+            "category": "Waterfall",
+            "image_url": "https://via.placeholder.com/300?text=Iguazu+Falls"
+        },
+        {
+            "name": "Copacabana Beach",
+            "description": "Famous beach district in Rio de Janeiro",
+            "coordinates": {"lat": -22.9711, "lng": -43.1822},
+            "rating": 4.6,
+            "category": "Beach",
+            "image_url": "https://via.placeholder.com/300?text=Copacabana+Beach"
+        },
+        {
+            "name": "Amazon Theatre",
+            "description": "Historic opera house in Manaus",
+            "coordinates": {"lat": -3.1303, "lng": -60.0236},
+            "rating": 4.5,
+            "category": "Historic Site",
+            "image_url": "https://via.placeholder.com/300?text=Amazon+Theatre"
+        }
     ]
 }
 
 class PlaceService:
     @staticmethod
+    def _normalize_location(value: str) -> str:
+        """Normalize location text for key matching."""
+        return "".join(ch for ch in value.lower().strip() if ch.isalnum())
+
+    @staticmethod
+    def _haversine_km(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
+        """Compute haversine distance in kilometers between two lat/lon points."""
+        earth_radius_km = 6371.0
+        dlat = radians(b_lat - a_lat)
+        dlon = radians(b_lon - a_lon)
+        arc = sin(dlat / 2) ** 2 + cos(radians(a_lat)) * cos(radians(b_lat)) * sin(dlon / 2) ** 2
+        return earth_radius_km * (2 * atan2(sqrt(arc), sqrt(1 - arc)))
+
+    @staticmethod
+    def _safe_rating(tags: Dict[str, str]) -> float:
+        """Extract a 0-5 style rating from OSM tags; fall back to a neutral value."""
+        for key in ("stars", "rating"):
+            raw = tags.get(key)
+            if not raw:
+                continue
+            cleaned = "".join(ch for ch in str(raw) if ch.isdigit() or ch == ".")
+            if not cleaned:
+                continue
+            try:
+                value = float(cleaned)
+                if value > 5:
+                    continue
+                return max(0.0, min(value, 5.0))
+            except ValueError:
+                continue
+        return 4.2
+
+    @staticmethod
+    def _category_from_tags(tags: Dict[str, str]) -> str:
+        """Map OSM tags to a user-friendly category."""
+        tourism = tags.get("tourism")
+        historic = tags.get("historic")
+        leisure = tags.get("leisure")
+        natural = tags.get("natural")
+
+        if tourism:
+            tourism_map = {
+                "attraction": "Attraction",
+                "museum": "Museum",
+                "theme_park": "Theme Park",
+                "zoo": "Zoo",
+                "aquarium": "Aquarium",
+                "gallery": "Gallery",
+                "viewpoint": "Viewpoint",
+            }
+            return tourism_map.get(tourism, tourism.replace("_", " ").title())
+        if historic:
+            return "Historic Site"
+        if leisure:
+            leisure_map = {
+                "park": "Park",
+                "garden": "Garden",
+                "nature_reserve": "Nature Reserve",
+                "beach_resort": "Beach",
+                "marina": "Marina",
+            }
+            return leisure_map.get(leisure, leisure.replace("_", " ").title())
+        if natural:
+            natural_map = {
+                "beach": "Beach",
+                "peak": "Mountain",
+                "waterfall": "Waterfall",
+                "cave": "Cave",
+            }
+            return natural_map.get(natural, natural.replace("_", " ").title())
+
+        return "Attraction"
+
+    @staticmethod
+    def _description_from_tags(tags: Dict[str, str], category: str, location: str) -> str:
+        """Build a readable description from OSM tags."""
+        if tags.get("description"):
+            return tags["description"]
+        if tags.get("wikidata"):
+            return f"Popular {category.lower()} in {location}"
+        if tags.get("tourism"):
+            return f"Well-known {tags['tourism'].replace('_', ' ')} in {location}"
+        if tags.get("historic"):
+            return f"Notable historic site in {location}"
+        if tags.get("leisure"):
+            return f"Popular {tags['leisure'].replace('_', ' ')} in {location}"
+        if tags.get("natural"):
+            return f"Scenic {tags['natural'].replace('_', ' ')} in {location}"
+        return f"Popular place to visit in {location}"
+
+    @staticmethod
+    def _worldwide_recommendations(location: str, limit: int = 10) -> List[PlaceRecommendation]:
+        """Fetch nearby points of interest worldwide using OpenStreetMap + Overpass."""
+        headers = {"User-Agent": "trip-planner-app/1.0 (development)"}
+
+        # 1) Geocode location text to a center point.
+        geocode_url = "https://nominatim.openstreetmap.org/search"
+        geocode_params = {"q": location, "format": "json", "limit": 1}
+        geocode_resp = requests.get(geocode_url, params=geocode_params, headers=headers, timeout=8)
+        if geocode_resp.status_code != 200:
+            return []
+
+        geocode_data = geocode_resp.json()
+        if not geocode_data:
+            return []
+
+        center_lat = float(geocode_data[0]["lat"])
+        center_lon = float(geocode_data[0]["lon"])
+
+        # 2) Fetch nearby POIs around geocoded center.
+        radius_m = 50000
+        overpass_limit = max(limit * 10, 100)
+        overpass_query = f"""
+[out:json][timeout:25];
+(
+  node(around:{radius_m},{center_lat},{center_lon})["tourism"];
+  way(around:{radius_m},{center_lat},{center_lon})["tourism"];
+  relation(around:{radius_m},{center_lat},{center_lon})["tourism"];
+  node(around:{radius_m},{center_lat},{center_lon})["historic"];
+  way(around:{radius_m},{center_lat},{center_lon})["historic"];
+  relation(around:{radius_m},{center_lat},{center_lon})["historic"];
+  node(around:{radius_m},{center_lat},{center_lon})["leisure"~"park|garden|nature_reserve|beach_resort|marina"];
+  way(around:{radius_m},{center_lat},{center_lon})["leisure"~"park|garden|nature_reserve|beach_resort|marina"];
+  relation(around:{radius_m},{center_lat},{center_lon})["leisure"~"park|garden|nature_reserve|beach_resort|marina"];
+  node(around:{radius_m},{center_lat},{center_lon})["natural"~"beach|peak|waterfall|cave"];
+  way(around:{radius_m},{center_lat},{center_lon})["natural"~"beach|peak|waterfall|cave"];
+  relation(around:{radius_m},{center_lat},{center_lon})["natural"~"beach|peak|waterfall|cave"];
+);
+out center {overpass_limit};
+"""
+        overpass_url = "https://overpass-api.de/api/interpreter"
+        overpass_resp = requests.post(overpass_url, data=overpass_query, headers=headers, timeout=25)
+        if overpass_resp.status_code != 200:
+            return []
+
+        payload = overpass_resp.json()
+        elements = payload.get("elements") or []
+        if not elements:
+            return []
+
+        places: List[Dict] = []
+        seen = set()
+        for element in elements:
+            tags = element.get("tags") or {}
+            name = (tags.get("name") or "").strip()
+            if not name:
+                continue
+
+            if "lat" in element and "lon" in element:
+                lat = float(element["lat"])
+                lon = float(element["lon"])
+            else:
+                center = element.get("center") or {}
+                if "lat" not in center or "lon" not in center:
+                    continue
+                lat = float(center["lat"])
+                lon = float(center["lon"])
+
+            # Deduplicate by name + approx coordinate.
+            dedupe_key = (name.lower(), round(lat, 3), round(lon, 3))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+
+            category = PlaceService._category_from_tags(tags)
+            places.append(
+                {
+                    "name": name,
+                    "description": PlaceService._description_from_tags(tags, category, location),
+                    "coordinates": {"lat": lat, "lng": lon},
+                    "rating": PlaceService._safe_rating(tags),
+                    "category": category,
+                    "image_url": None,
+                    "distance_km": PlaceService._haversine_km(center_lat, center_lon, lat, lon),
+                }
+            )
+
+        if not places:
+            return []
+
+        ranked = sorted(places, key=lambda x: (x["distance_km"], -x["rating"]))
+        for place in ranked:
+            place.pop("distance_km", None)
+        return ranked[:limit]
+
+    @staticmethod
     def get_recommendations(location: str, limit: int = 10) -> List[PlaceRecommendation]:
         """Get place recommendations for a location"""
         # Normalize location for lookup
-        location_key = location.lower().strip().replace(" ", "")
+        location_key = PlaceService._normalize_location(location)
+        places = []
+        sort_by_distance = False
         
         # Try exact match first
         if location_key in PLACES_DATABASE:
             places = PLACES_DATABASE[location_key]
         else:
-            # Try partial match
+            # Try partial match and common variations
             matched = False
             for db_key in PLACES_DATABASE.keys():
                 if location_key in db_key or db_key in location_key:
@@ -194,16 +528,68 @@ class PlaceService:
                     matched = True
                     break
             
-            # If no match found, return empty list instead of defaulting to Paris
+            # Try common city name variations
             if not matched:
-                places = []
+                variations = {
+                    "newyork": "newyork",
+                    "nyc": "newyork", 
+                    "newyorkcity": "newyork",
+                    "boston": "boston",
+                    "london": "london",
+                    "paris": "paris",
+                    "tokyo": "tokyo",
+                    "dubai": "dubai",
+                    "ghana": "ghana",
+                    "india": "india",
+                    "brazil": "brazil",
+                    "brasil": "brazil",
+                    "rio": "brazil",
+                    "riodejaneiro": "brazil",
+                    "saopaulo": "brazil",
+                    "saopaulocity": "brazil",
+                    "kolkata": "india",
+                    "calcuta": "india",
+                    "calcutta": "india",
+                    "newdelhi": "india",
+                    "delhi": "india",
+                    "mumbai": "india",
+                    "agra": "india",
+                    "jaipur": "india",
+                    "varanasi": "india",
+                    "usa": "newyork",  # Default to New York for USA
+                    "uk": "london",    # Default to London for UK
+                    "france": "paris",  # Default to Paris for France
+                    "japan": "tokyo",   # Default to Tokyo for Japan
+                    "uae": "dubai"      # Default to Dubai for UAE
+                }
+                
+                for variation, match_key in variations.items():
+                    if location_key == variation:
+                        if match_key in PLACES_DATABASE:
+                            places = PLACES_DATABASE[match_key]
+                            matched = True
+                            break
+            
+            # If still no match found in static DB, fetch worldwide live recommendations.
+            if not matched:
+                try:
+                    live_places = PlaceService._worldwide_recommendations(location, limit)
+                    if live_places:
+                        return live_places
+                    places = []
+                except Exception:
+                    # On any failure, fall back to empty list (no suggestions)
+                    places = []
         
         # Sort by rating and return top places
-        if places:
-            sorted_places = sorted(places, key=lambda x: x["rating"], reverse=True)
-            return sorted_places[:limit]
-        else:
+        if not places:
             return []
+
+        if sort_by_distance:
+            return places[:limit]
+
+        sorted_places = sorted(places, key=lambda x: x["rating"], reverse=True)
+        return sorted_places[:limit]
     
     @staticmethod
     def search_places(query: str) -> List[PlaceRecommendation]:

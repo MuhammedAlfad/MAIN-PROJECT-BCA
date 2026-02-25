@@ -9,19 +9,18 @@ class MongoDatabase:
 
     @classmethod
     def connect_db(cls):
-        cls.client = MongoClient(settings.MONGODB_URL, serverSelectionTimeoutMS=30000)
         try:
+            cls.client = MongoClient(settings.MONGODB_URL, serverSelectionTimeoutMS=5000)
             cls.client.admin.command('ping')
             cls.db = cls.client[settings.DATABASE_NAME]
             print("[OK] Connected to MongoDB")
             return cls.db
-        except ServerSelectionTimeoutError:
-            print("[ERROR] Failed to connect to MongoDB")
+        except (ServerSelectionTimeoutError, Exception) as e:
+            print("[WARNING] MongoDB not available - running in mock mode")
             print(f"   URL: {settings.MONGODB_URL}")
-            raise
-        except Exception as e:
-            print(f"[ERROR] MongoDB Error: {str(e)}")
-            raise
+            print(f"   Error: {str(e)}")
+            # Don't raise error, allow app to run without DB
+            return None
 
     @classmethod
     def close_db(cls):
@@ -33,6 +32,6 @@ class MongoDatabase:
     def get_db(cls):
         if cls.db is None:
             cls.connect_db()
-        return cls.db
+        return cls.db  # Will be None if DB not available
 
 db = MongoDatabase()

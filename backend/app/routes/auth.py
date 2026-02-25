@@ -74,14 +74,21 @@ async def verify_token(data: VerifyTokenRequest):
             detail="Invalid token"
         )
     
-    users_collection = db.get_db()["users"]
-    try:
-        user = users_collection.find_one({"_id": ObjectId(user_id)})
-    except:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
+    # Try to get user from database or mock data
+    database = db.get_db()
+    if database is not None:
+        try:
+            users_collection = database["users"]
+            user = users_collection.find_one({"_id": ObjectId(user_id)})
+        except:
+            user = None
+    else:
+        user = None
+    
+    # If not found in real DB, try mock data
+    if not user:
+        from app.services.auth_service import MOCK_USERS
+        user = MOCK_USERS.get(user_id)
     
     if not user:
         raise HTTPException(

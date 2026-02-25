@@ -6,6 +6,10 @@ from app.config import settings
 from app.database import db
 from bson import ObjectId
 
+# Mock database for testing without MongoDB
+MOCK_USERS = {}
+MOCK_USER_COUNTER = 1
+
 class AuthService:
     @staticmethod
     def hash_password(password: str) -> str:
@@ -41,13 +45,50 @@ class AuthService:
     
     @staticmethod
     def register_user(email: str, username: str, password: str):
-        users_collection = db.get_db()["users"]
+        global MOCK_USER_COUNTER
         
-        # Check if user exists
-        if users_collection.find_one({"$or": [{"email": email}, {"username": username}]}):
-            return None
+        # Try to use real database first
+        database = db.get_db()
+        if database is not None:
+            try:
+                users_collection = database["users"]
+                
+                # Check if user exists
+                if users_collection.find_one({"$or": [{"email": email}, {"username": username}]}):
+                    return None
+                
+                user = {
+                    "email": email,
+                    "username": username,
+                    "password_hash": AuthService.hash_password(password),
+                    "profile": {
+                        "bio": "",
+                        "profile_picture": None,
+                        "followers": 0,
+                        "following": 0
+                    },
+                    "created_at": datetime.utcnow(),
+                    "trips": []
+                }
+                
+                result = users_collection.insert_one(user)
+                user["_id"] = str(result.inserted_id)
+                return user
+            except:
+                pass  # Fall back to mock if DB fails
+        
+        # Mock database implementation
+        # Check if user exists in mock
+        for user in MOCK_USERS.values():
+            if user["email"] == email or user["username"] == username:
+                return None
+        
+        # Create new user in mock
+        user_id = f"mock_{MOCK_USER_COUNTER}"
+        MOCK_USER_COUNTER += 1
         
         user = {
+            "_id": user_id,
             "email": email,
             "username": username,
             "password_hash": AuthService.hash_password(password),
@@ -61,17 +102,27 @@ class AuthService:
             "trips": []
         }
         
-        result = users_collection.insert_one(user)
-        user["_id"] = str(result.inserted_id)
+        MOCK_USERS[user_id] = user
         return user
     
     @staticmethod
     def authenticate_user(email: str, password: str):
-        users_collection = db.get_db()["users"]
-        user = users_collection.find_one({"email": email})
+        # Try to use real database first
+        database = db.get_db()
+        if database is not None:
+            try:
+                users_collection = database["users"]
+                user = users_collection.find_one({"email": email})
+                
+                if user and AuthService.verify_password(password, user.get("password_hash", "")):
+                    user["_id"] = str(user["_id"])
+                    return user
+            except:
+                pass  # Fall back to mock if DB fails
         
-        if not user or not AuthService.verify_password(password, user.get("password_hash", "")):
-            return None
+        # Mock database implementation
+        for user in MOCK_USERS.values():
+            if user["email"] == email and AuthService.verify_password(password, user.get("password_hash", "")):
+                return user
         
-        user["_id"] = str(user["_id"])
-        return user
+        return None

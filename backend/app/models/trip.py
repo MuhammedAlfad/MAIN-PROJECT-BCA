@@ -11,6 +11,11 @@ class Place(BaseModel):
     image_url: Optional[str] = None
     category: Optional[str] = None
     added_at: Optional[datetime] = None
+    visit_time: Optional[str] = None  # HH:MM
+    duration_minutes: Optional[int] = None
+    travel_minutes_from_previous: Optional[int] = None
+    notes: Optional[str] = None
+    auto_generated_time: Optional[bool] = None
 
 class DayItinerary(BaseModel):
     day: int

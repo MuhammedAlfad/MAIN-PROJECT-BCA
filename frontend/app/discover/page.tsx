@@ -1,14 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/context/AuthContext';
 import { tripsApi } from '@/lib/api';
 import { TripCard } from '@/components/TripCard';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { Globe, Search } from 'lucide-react';
 
 export default function DiscoverPage() {
-  const { user } = useAuth();
   const [trips, setTrips] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -72,7 +70,7 @@ export default function DiscoverPage() {
           ) : filteredTrips.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredTrips.map((trip) => (
-                <TripCard key={trip._id} trip={trip} />
+                <TripCard key={trip._id} trip={trip} mode="discover" />
               ))}
             </div>
           ) : (
