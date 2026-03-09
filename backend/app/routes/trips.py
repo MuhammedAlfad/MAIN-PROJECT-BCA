@@ -67,6 +67,17 @@ async def get_public_trips(limit: int = 20, skip: int = 0):
     trips = TripService.get_public_trips(limit, skip)
     return {"trips": trips}
 
+@router.get("/admin/report")
+async def get_admin_report(authorization: Optional[str] = Header(None)):
+    """Get admin report for all trips."""
+    user_id = get_user_from_token(authorization)
+    if not AuthService.is_admin_user(user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return TripService.get_admin_report()
+
 @router.get("/{trip_id}")
 async def get_trip(trip_id: str):
     """Get a specific trip"""

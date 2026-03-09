@@ -20,6 +20,11 @@ class UserProfile(BaseModel):
     followers: int = 0
     following: int = 0
 
+class UserProfileUpdate(BaseModel):
+    username: Optional[str] = None
+    bio: Optional[str] = None
+    profile_picture: Optional[str] = None
+
 class User(UserBase):
     id: str
     profile: UserProfile

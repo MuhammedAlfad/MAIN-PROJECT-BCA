@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 
@@ -19,9 +20,12 @@ export const LoginForm: React.FC = () => {
 
     try {
       await login(email, password);
-      // Small delay to ensure context updates before navigation
-      await new Promise(resolve => setTimeout(resolve, 100));
-      router.push('/');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (email.trim().toLowerCase() === 'admin@gmail.com') {
+        router.push('/admin');
+      } else {
+        router.push('/');
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed');
       setIsLoading(false);
@@ -29,55 +33,58 @@ export const LoginForm: React.FC = () => {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto">
-      <div className="bg-white rounded-lg shadow-lg p-8">
-        <h1 className="text-3xl font-bold mb-6 text-center text-gray-800">Login</h1>
+    <div className="w-full">
+      <div className="rounded-2xl border border-white/15 bg-[#0b1018]/85 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-sm p-6 md:p-7">
+        <h1 className="text-3xl font-semibold text-center text-slate-100 tracking-tight">Sign In To Your Account</h1>
+        <p className="mt-2 text-center text-sm text-slate-400">
+          Welcome back. Enter your credentials to continue.
+        </p>
 
         {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          <div className="mt-5 rounded-lg border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2">Email</label>
+        <form onSubmit={handleSubmit} className="mt-5">
+          <div className="mb-3">
+            <label className="block text-xs uppercase tracking-[0.1em] text-slate-400 mb-1.5">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-              placeholder="your@email.com"
+              className="w-full rounded-lg border border-white/20 bg-[#070c14] px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-sky-400/60"
+              placeholder="Enter your email"
             />
           </div>
 
-          <div className="mb-6">
-            <label className="block text-gray-700 text-sm font-bold mb-2">Password</label>
+          <div className="mb-4">
+            <label className="block text-xs uppercase tracking-[0.1em] text-slate-400 mb-1.5">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-              placeholder="••••••••"
+              className="w-full rounded-lg border border-white/20 bg-[#070c14] px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-sky-400/60"
+              placeholder="Enter your password"
             />
           </div>
 
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+            className="w-full rounded-lg bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-500 py-2.5 px-4 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
           >
-            {isLoading ? 'Logging in...' : 'Login'}
+            {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
 
-        <p className="mt-4 text-center text-gray-600">
-          Don't have an account?{' '}
-          <a href="/register" className="text-blue-600 hover:underline">
+        <p className="mt-4 text-center text-sm text-slate-400">
+          Don&apos;t have an account?{' '}
+          <Link href="/register" className="text-sky-300 hover:text-sky-200 underline-offset-2 hover:underline">
             Register here
-          </a>
+          </Link>
         </p>
       </div>
     </div>

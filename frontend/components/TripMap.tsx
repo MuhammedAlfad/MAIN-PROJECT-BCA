@@ -183,22 +183,22 @@ export const TripMap: React.FC<TripMapProps> = ({
   }, [locations]);
 
   return (
-    <div className="w-full h-full flex flex-col bg-gray-100 rounded-lg overflow-hidden">
-      <div className="bg-blue-600 text-white p-3 font-semibold text-sm flex items-center justify-between">
+    <div className="w-full h-full flex flex-col bg-[#10161f] rounded-lg overflow-hidden">
+      <div className="bg-[#0b1320] border-b border-white/10 text-slate-100 p-3 font-semibold text-sm flex items-center justify-between">
         <span>{title}</span>
-        {routeLoading && <span className="text-xs animate-pulse">Calculating route...</span>}
+        {routeLoading && <span className="text-xs text-slate-300 animate-pulse">Calculating route...</span>}
       </div>
       <div ref={mapRef} className="flex-1 min-h-96" />
       {showRouteList && locations.length > 0 && (
-        <div className="bg-white border-t p-3 text-xs text-gray-600 max-h-24 overflow-y-auto">
-          <div className="font-semibold mb-2">Route ({locations.length} stops):</div>
+        <div className="bg-[#0f1722] border-t border-white/10 p-3 text-xs text-slate-300 max-h-24 overflow-y-auto">
+          <div className="font-semibold mb-2 text-slate-100">Route ({locations.length} stops):</div>
           <div className="space-y-1">
             {locations.map((loc, index) => (
               <div key={index} className="flex items-center gap-2">
                 <div className="w-5 h-5 rounded-full bg-blue-600 text-white text-center text-xs leading-5 font-bold flex-shrink-0">
                   {index + 1}
                 </div>
-                <span className="text-gray-700 truncate">{loc.name}</span>
+                <span className="text-slate-200 truncate">{loc.name}</span>
               </div>
             ))}
           </div>

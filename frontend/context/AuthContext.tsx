@@ -16,12 +16,19 @@ interface User {
   created_at: string;
 }
 
+interface ProfileUpdatePayload {
+  username?: string;
+  bio?: string;
+  profile_picture?: string | null;
+}
+
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
+  updateProfile: (profileData: ProfileUpdatePayload) => Promise<void>;
   logout: () => void;
 }
 
@@ -65,6 +72,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(userData);
   };
 
+  const updateProfile = async (profileData: ProfileUpdatePayload) => {
+    const response = await authApi.updateProfile(profileData);
+    setUser(response.data);
+  };
+
   const logout = () => {
     localStorage.removeItem('access_token');
     setUser(null);
@@ -78,6 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: !!user,
         login,
         register,
+        updateProfile,
         logout,
       }}
     >

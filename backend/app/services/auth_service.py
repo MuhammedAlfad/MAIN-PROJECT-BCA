@@ -1,16 +1,72 @@
 import hashlib
 import hmac
 from datetime import datetime, timedelta
+from typing import Optional
 from jose import JWTError, jwt
 from app.config import settings
 from app.database import db
 from bson import ObjectId
+from pymongo import ReturnDocument
 
 # Mock database for testing without MongoDB
 MOCK_USERS = {}
 MOCK_USER_COUNTER = 1
+ADMIN_USER_ID = "admin_builtin"
+ADMIN_EMAIL = "admin@gmail.com"
+ADMIN_PASSWORD = "admin#123"
+ADMIN_USERNAME = "admin"
+
+
+def _ensure_builtin_admin_user():
+    admin_user = MOCK_USERS.get(ADMIN_USER_ID)
+    if admin_user:
+        return admin_user
+
+    admin_user = {
+        "_id": ADMIN_USER_ID,
+        "email": ADMIN_EMAIL,
+        "username": ADMIN_USERNAME,
+        "password_hash": AuthService.hash_password(ADMIN_PASSWORD),
+        "profile": {
+            "bio": "System administrator",
+            "profile_picture": None,
+            "followers": 0,
+            "following": 0,
+        },
+        "created_at": datetime.utcnow(),
+        "trips": [],
+    }
+    MOCK_USERS[ADMIN_USER_ID] = admin_user
+    return admin_user
 
 class AuthService:
+    @staticmethod
+    def get_builtin_admin_user():
+        return _ensure_builtin_admin_user()
+
+    @staticmethod
+    def get_user_by_id(user_id: str):
+        if user_id == ADMIN_USER_ID:
+            return AuthService.get_builtin_admin_user()
+
+        database = db.get_db()
+        if database is not None:
+            try:
+                users_collection = database["users"]
+                user = users_collection.find_one({"_id": ObjectId(user_id)})
+                if user:
+                    user["_id"] = str(user["_id"])
+                    return user
+            except:
+                pass
+
+        return MOCK_USERS.get(user_id)
+
+    @staticmethod
+    def is_admin_user(user_id: str) -> bool:
+        user = AuthService.get_user_by_id(user_id)
+        return bool(user and str(user.get("email", "")).lower() == ADMIN_EMAIL)
+
     @staticmethod
     def hash_password(password: str) -> str:
         """Simple SHA256 hash with salt"""
@@ -107,6 +163,9 @@ class AuthService:
     
     @staticmethod
     def authenticate_user(email: str, password: str):
+        if email.strip().lower() == ADMIN_EMAIL and password == ADMIN_PASSWORD:
+            return AuthService.get_builtin_admin_user()
+
         # Try to use real database first
         database = db.get_db()
         if database is not None:
@@ -126,3 +185,87 @@ class AuthService:
                 return user
         
         return None
+
+    @staticmethod
+    def update_user_profile(
+        user_id: str,
+        username: Optional[str] = None,
+        bio: Optional[str] = None,
+        profile_picture: Optional[str] = None,
+    ):
+        normalized_username = username.strip() if isinstance(username, str) else None
+        normalized_bio = bio.strip() if isinstance(bio, str) else None
+        normalized_picture = profile_picture.strip() if isinstance(profile_picture, str) else None
+        if normalized_picture == "":
+            normalized_picture = None
+
+        if normalized_username is not None and not normalized_username:
+            raise ValueError("Username cannot be empty")
+
+        # Try real database first for non-admin users.
+        database = db.get_db()
+        if database is not None and user_id != ADMIN_USER_ID:
+            try:
+                users_collection = database["users"]
+                object_id = ObjectId(user_id)
+                existing_user = users_collection.find_one({"_id": object_id})
+                if existing_user:
+                    update_data = {}
+                    if normalized_username is not None:
+                        conflict = users_collection.find_one({
+                            "username": normalized_username,
+                            "_id": {"$ne": object_id},
+                        })
+                        if conflict:
+                            raise ValueError("Username already exists")
+                        update_data["username"] = normalized_username
+
+                    profile_updates = {}
+                    if normalized_bio is not None:
+                        profile_updates["profile.bio"] = normalized_bio
+                    if profile_picture is not None:
+                        profile_updates["profile.profile_picture"] = normalized_picture
+
+                    update_data.update(profile_updates)
+
+                    if update_data:
+                        updated = users_collection.find_one_and_update(
+                            {"_id": object_id},
+                            {"$set": update_data},
+                            return_document=ReturnDocument.AFTER,
+                        )
+                        if updated:
+                            updated["_id"] = str(updated["_id"])
+                            return updated
+
+                    existing_user["_id"] = str(existing_user["_id"])
+                    return existing_user
+            except ValueError:
+                raise
+            except Exception:
+                pass
+
+        # Mock-mode / built-in admin update path.
+        user = MOCK_USERS.get(user_id)
+        if not user and user_id == ADMIN_USER_ID:
+            user = _ensure_builtin_admin_user()
+            MOCK_USERS[ADMIN_USER_ID] = user
+
+        if not user:
+            return None
+
+        if normalized_username is not None:
+            for candidate_id, candidate in MOCK_USERS.items():
+                if candidate_id == user_id:
+                    continue
+                if str(candidate.get("username", "")).lower() == normalized_username.lower():
+                    raise ValueError("Username already exists")
+            user["username"] = normalized_username
+
+        if normalized_bio is not None:
+            user.setdefault("profile", {})["bio"] = normalized_bio
+
+        if profile_picture is not None:
+            user.setdefault("profile", {})["profile_picture"] = normalized_picture
+
+        return user

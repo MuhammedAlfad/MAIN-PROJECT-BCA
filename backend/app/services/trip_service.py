@@ -341,5 +341,65 @@ class TripService:
                 trip["itinerary"][day - 1]["notes"] = notes
                 trip["updated_at"] = datetime.utcnow()
                 return trip
-        
+
         return None
+
+    @staticmethod
+    def get_admin_report(limit: int = 2000) -> dict:
+        """Get admin report data with summary for all trips."""
+        trips = []
+
+        database = db.get_db()
+        if database is not None:
+            try:
+                trips_collection = database["trips"]
+                trips = list(trips_collection.find({})
+                            .sort("updated_at", -1)
+                            .limit(limit))
+                for trip in trips:
+                    trip["_id"] = str(trip["_id"])
+            except:
+                trips = []
+
+        if not trips:
+            trips = list(MOCK_TRIPS.values())
+            trips.sort(key=lambda t: t.get("updated_at", t.get("created_at", datetime.min)), reverse=True)
+            trips = trips[:limit]
+
+        total_days = 0
+        total_places = 0
+        users = set()
+        destination_counts = {}
+
+        for trip in trips:
+            itinerary = trip.get("itinerary", []) or []
+            total_days += len(itinerary)
+            users.add(trip.get("user_id", ""))
+
+            for day in itinerary:
+                total_places += len(day.get("places", []) or [])
+
+            dest = str(trip.get("end_location", "")).strip()
+            if dest:
+                destination_counts[dest] = destination_counts.get(dest, 0) + 1
+
+        public_trips = len([t for t in trips if t.get("is_public")])
+        private_trips = len(trips) - public_trips
+
+        top_destinations = [
+            {"name": name, "count": count}
+            for name, count in sorted(destination_counts.items(), key=lambda item: item[1], reverse=True)[:8]
+        ]
+
+        return {
+            "summary": {
+                "total_trips": len(trips),
+                "public_trips": public_trips,
+                "private_trips": private_trips,
+                "total_days": total_days,
+                "total_places": total_places,
+                "unique_users": len([u for u in users if u]),
+            },
+            "top_destinations": top_destinations,
+            "trips": trips,
+        }

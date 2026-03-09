@@ -3,11 +3,22 @@
 import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import { usePathname } from 'next/navigation';
 import { MapPin, Menu, X } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuth();
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = React.useState(false);
+
+  if (
+    (pathname === '/' && isAuthenticated) ||
+    pathname === '/login' ||
+    pathname === '/register' ||
+    pathname === '/admin'
+  ) {
+    return null;
+  }
 
   return (
     <nav className="bg-white shadow-lg">

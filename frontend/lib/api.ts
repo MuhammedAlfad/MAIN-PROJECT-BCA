@@ -25,6 +25,8 @@ export const authApi = {
     apiClient.post('/api/auth/login', { email, password }),
   verifyToken: (token: string) =>
     apiClient.post('/api/auth/verify-token', { token }),
+  updateProfile: (profileData: { username?: string; bio?: string; profile_picture?: string | null }) =>
+    apiClient.put('/api/auth/profile', profileData),
 };
 
 export const tripsApi = {
@@ -40,6 +42,8 @@ export const tripsApi = {
     apiClient.delete(`/api/trips/${tripId}`),
   getPublicTrips: (limit?: number, skip?: number) =>
     apiClient.get('/api/trips/discover/public', { params: { limit, skip } }),
+  getAdminReport: () =>
+    apiClient.get('/api/trips/admin/report'),
   addPlaceToTrip: (tripId: string, day: number, place: any) =>
     apiClient.post(`/api/trips/${tripId}/add-place/${day}`, place),
   removePlaceFromTrip: (tripId: string, day: number, placeName: string) =>
