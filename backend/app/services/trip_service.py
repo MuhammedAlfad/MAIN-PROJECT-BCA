@@ -10,6 +10,17 @@ MOCK_TRIP_COUNTER = 1
 
 class TripService:
     @staticmethod
+    def _hydrate_trip(trip: Optional[dict]) -> Optional[dict]:
+        if not trip:
+            return trip
+        trip["feedback"] = trip.get("feedback") or ""
+        trip["is_public"] = bool(trip.get("is_public", False))
+        trip["is_finished"] = bool(trip.get("is_finished", False))
+        trip["cover_image"] = trip.get("cover_image")
+        trip["media_gallery"] = trip.get("media_gallery", []) or []
+        return trip
+
+    @staticmethod
     def create_trip(user_id: str, trip_data: TripCreate) -> dict:
         """Create a new trip"""
         global MOCK_TRIP_COUNTER
@@ -44,6 +55,7 @@ class TripService:
                     "user_id": user_id,
                     "title": trip_data.title,
                     "description": trip_data.description or "",
+                    "feedback": trip_data.feedback or "",
                     "start_location": trip_data.start_location,
                     "end_location": trip_data.end_location,
                     "start_date": trip_data.start_date.isoformat() if hasattr(trip_data.start_date, 'isoformat') else str(trip_data.start_date),
@@ -58,7 +70,9 @@ class TripService:
                         for day in itinerary
                     ],
                     "is_public": trip_data.is_public,
+                    "is_finished": trip_data.is_finished,
                     "cover_image": None,
+                    "media_gallery": [],
                     "created_at": datetime.utcnow(),
                     "updated_at": datetime.utcnow()
                 }
@@ -66,7 +80,7 @@ class TripService:
                 result = trips_collection.insert_one(trip)
                 trip["_id"] = str(result.inserted_id)
                 
-                return trip
+                return TripService._hydrate_trip(trip)
             except Exception as e:
                 print(f"DB trip creation failed: {str(e)}")
                 pass  # Fall back to mock if DB fails
@@ -100,6 +114,7 @@ class TripService:
             "user_id": user_id,
             "title": trip_data.title,
             "description": trip_data.description or "",
+            "feedback": trip_data.feedback or "",
             "start_location": trip_data.start_location,
             "end_location": trip_data.end_location,
             "start_date": trip_data.start_date.isoformat() if hasattr(trip_data.start_date, 'isoformat') else str(trip_data.start_date),
@@ -114,13 +129,15 @@ class TripService:
                 for day in itinerary
             ],
             "is_public": trip_data.is_public,
+            "is_finished": trip_data.is_finished,
             "cover_image": None,
+            "media_gallery": [],
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
         
         MOCK_TRIPS[trip_id] = trip
-        return trip
+        return TripService._hydrate_trip(trip)
     
     @staticmethod
     def get_user_trips(user_id: str) -> List[dict]:
@@ -134,13 +151,14 @@ class TripService:
                 
                 for trip in trips:
                     trip["_id"] = str(trip["_id"])
+                    TripService._hydrate_trip(trip)
                 
                 return trips
             except:
                 pass  # Fall back to mock if DB fails
         
         # Mock database implementation
-        user_trips = [trip for trip in MOCK_TRIPS.values() if trip["user_id"] == user_id]
+        user_trips = [TripService._hydrate_trip(trip) for trip in MOCK_TRIPS.values() if trip["user_id"] == user_id]
         return user_trips
     
     @staticmethod
@@ -155,13 +173,14 @@ class TripService:
                 
                 if trip:
                     trip["_id"] = str(trip["_id"])
+                    TripService._hydrate_trip(trip)
                 
                 return trip
             except:
                 pass  # Fall back to mock if DB fails
         
         # Mock database implementation
-        return MOCK_TRIPS.get(trip_id)
+        return TripService._hydrate_trip(MOCK_TRIPS.get(trip_id))
     
     @staticmethod
     def update_trip(trip_id: str, trip_data: TripUpdate) -> Optional[dict]:
@@ -183,6 +202,7 @@ class TripService:
                 
                 if result:
                     result["_id"] = str(result["_id"])
+                    TripService._hydrate_trip(result)
                 
                 return result
             except:
@@ -194,7 +214,7 @@ class TripService:
             update_data = {k: v for k, v in trip_data.model_dump(mode="json").items() if v is not None}
             trip.update(update_data)
             trip["updated_at"] = datetime.utcnow()
-            return trip
+            return TripService._hydrate_trip(trip)
         
         return None
     
@@ -226,20 +246,25 @@ class TripService:
         if database is not None:
             try:
                 trips_collection = database["trips"]
-                trips = list(trips_collection.find({"is_public": True})
+                trips = list(trips_collection.find({"is_public": True, "is_finished": True})
                             .sort("created_at", -1)
                             .skip(skip)
                             .limit(limit))
                 
                 for trip in trips:
                     trip["_id"] = str(trip["_id"])
+                    TripService._hydrate_trip(trip)
                 
                 return trips
             except:
                 pass  # Fall back to mock if DB fails
         
         # Mock database implementation
-        public_trips = [trip for trip in MOCK_TRIPS.values() if trip.get("is_public", False)]
+        public_trips = [
+            TripService._hydrate_trip(trip)
+            for trip in MOCK_TRIPS.values()
+            if trip.get("is_public", False) and trip.get("is_finished", False)
+        ]
         # Sort by created_at (simple mock sorting)
         public_trips.sort(key=lambda x: x.get("created_at", datetime.min), reverse=True)
         return public_trips[skip:skip + limit]
@@ -263,6 +288,7 @@ class TripService:
                 
                 if result:
                     result["_id"] = str(result["_id"])
+                    TripService._hydrate_trip(result)
                 
                 return result
             except:
@@ -275,7 +301,7 @@ class TripService:
                 place["added_at"] = datetime.utcnow()
                 trip["itinerary"][day - 1]["places"].append(place)
                 trip["updated_at"] = datetime.utcnow()
-                return trip
+                return TripService._hydrate_trip(trip)
         
         return None
     
@@ -296,6 +322,7 @@ class TripService:
                 
                 if result:
                     result["_id"] = str(result["_id"])
+                    TripService._hydrate_trip(result)
                 
                 return result
             except:
@@ -308,7 +335,7 @@ class TripService:
                 places = trip["itinerary"][day - 1]["places"]
                 trip["itinerary"][day - 1]["places"] = [p for p in places if p.get("name") != place_name]
                 trip["updated_at"] = datetime.utcnow()
-                return trip
+                return TripService._hydrate_trip(trip)
         
         return None
     
@@ -329,6 +356,7 @@ class TripService:
                 
                 if result:
                     result["_id"] = str(result["_id"])
+                    TripService._hydrate_trip(result)
                 
                 return result
             except:
@@ -340,7 +368,7 @@ class TripService:
             if 0 <= day - 1 < len(trip.get("itinerary", [])):
                 trip["itinerary"][day - 1]["notes"] = notes
                 trip["updated_at"] = datetime.utcnow()
-                return trip
+                return TripService._hydrate_trip(trip)
 
         return None
 
@@ -372,6 +400,7 @@ class TripService:
         destination_counts = {}
 
         for trip in trips:
+            TripService._hydrate_trip(trip)
             itinerary = trip.get("itinerary", []) or []
             total_days += len(itinerary)
             users.add(trip.get("user_id", ""))

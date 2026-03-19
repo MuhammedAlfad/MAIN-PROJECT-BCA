@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Header
 from pydantic import BaseModel
 from typing import Optional
-from app.models.user import UserCreate, UserLogin, UserProfileUpdate, UserResponse, Token
+from app.models.user import AuthResponse, UserCreate, UserLogin, UserProfileUpdate, UserResponse
 from app.services.auth_service import AuthService
 from app.database import db
 from bson import ObjectId
@@ -10,6 +10,23 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 class VerifyTokenRequest(BaseModel):
     token: str
+
+
+def build_auth_response(user: dict) -> AuthResponse:
+    access_token = AuthService.create_access_token(user["_id"])
+    user_response = UserResponse(
+        id=str(user["_id"]),
+        email=user["email"],
+        username=user["username"],
+        profile=user["profile"],
+        created_at=user["created_at"],
+    )
+    return AuthResponse(
+        requires_otp=False,
+        access_token=access_token,
+        token_type="bearer",
+        user=user_response,
+    )
 
 def get_user_from_token(authorization: Optional[str] = Header(None)) -> str:
     """Extract user_id from authorization header"""
@@ -43,58 +60,68 @@ def get_user_from_token(authorization: Optional[str] = Header(None)) -> str:
             detail=f"Invalid authorization: {str(e)}"
         )
 
-@router.post("/register", response_model=Token)
+@router.post("/register", response_model=AuthResponse)
 async def register(user_data: UserCreate):
-    """Register a new user"""
-    user = AuthService.register_user(
-        email=user_data.email,
-        username=user_data.username,
-        password=user_data.password
-    )
-    
-    if not user:
+    """Register a new user with email OTP verification."""
+    try:
+        if user_data.otp:
+            user = AuthService.complete_registration_with_otp(
+                email=user_data.email,
+                username=user_data.username,
+                password=user_data.password,
+                otp=user_data.otp,
+            )
+            return build_auth_response(user)
+
+        challenge = AuthService.start_registration_otp(
+            email=user_data.email,
+            username=user_data.username,
+            password=user_data.password,
+        )
+        return AuthResponse(
+            requires_otp=True,
+            message="OTP sent to your email. Enter it to complete registration.",
+            email=challenge["email"],
+            otp_expires_in_seconds=challenge["otp_expires_in_seconds"],
+        )
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email or username already exists"
+            detail=str(e),
         )
-    
-    access_token = AuthService.create_access_token(user["_id"])
-    
-    user_response = UserResponse(
-        id=user["_id"],
-        email=user["email"],
-        username=user["username"],
-        profile=user["profile"],
-        created_at=user["created_at"]
-    )
-    
-    return Token(access_token=access_token, token_type="bearer", user=user_response)
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=AuthResponse)
 async def login(user_data: UserLogin):
-    """Login user"""
-    user = AuthService.authenticate_user(
-        email=user_data.email,
-        password=user_data.password
-    )
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+    """Login user with email OTP verification for non-admin accounts."""
+    try:
+        if user_data.otp:
+            user = AuthService.complete_login_with_otp(
+                email=user_data.email,
+                password=user_data.password,
+                otp=user_data.otp,
+            )
+            return build_auth_response(user)
+
+        result = AuthService.start_login_otp(
+            email=user_data.email,
+            password=user_data.password,
         )
-    
-    access_token = AuthService.create_access_token(user["_id"])
-    
-    user_response = UserResponse(
-        id=user["_id"],
-        email=user["email"],
-        username=user["username"],
-        profile=user["profile"],
-        created_at=user["created_at"]
-    )
-    
-    return Token(access_token=access_token, token_type="bearer", user=user_response)
+
+        if result.get("bypass_otp"):
+            return build_auth_response(result["user"])
+
+        return AuthResponse(
+            requires_otp=True,
+            message="OTP sent to your email. Enter it to finish signing in.",
+            email=result["email"],
+            otp_expires_in_seconds=result["otp_expires_in_seconds"],
+        )
+    except ValueError as e:
+        detail = str(e)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED if detail == "Invalid email or password" else status.HTTP_400_BAD_REQUEST,
+            detail=detail,
+        )
 
 @router.post("/verify-token")
 async def verify_token(data: VerifyTokenRequest):

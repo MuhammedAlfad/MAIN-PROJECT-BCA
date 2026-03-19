@@ -7,6 +7,7 @@ import { CalendarDays, ChevronLeft, Loader2, MapPin } from 'lucide-react';
 import { tripsApi } from '@/lib/api';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useAuth } from '@/context/AuthContext';
+import { TripMediaGallery } from '@/components/TripMediaGallery';
 
 type TripMapLocation = { name: string; lat: number; lng: number };
 
@@ -63,7 +64,12 @@ const buildDayTimeline = (day: any) => {
         : index < Math.ceil(places.length / 2)
           ? 'morning'
           : 'afternoon';
-    slots[slot].push(place);
+    slots[slot].push({
+      place,
+      visitMinutes,
+      duration,
+      originalIndex: index,
+    });
 
     if (visitMinutes !== null) {
       const end = visitMinutes + duration;
@@ -77,6 +83,19 @@ const buildDayTimeline = (day: any) => {
     }
   });
 
+  const sortTimelinePlaces = (entries: any[]) =>
+    [...entries].sort((a, b) => {
+      if (a.visitMinutes === null && b.visitMinutes === null) {
+        return a.originalIndex - b.originalIndex;
+      }
+      if (a.visitMinutes === null) return 1;
+      if (b.visitMinutes === null) return -1;
+      if (a.visitMinutes === b.visitMinutes) {
+        return a.originalIndex - b.originalIndex;
+      }
+      return a.visitMinutes - b.visitMinutes;
+    });
+
   return [
     {
       key: 'morning',
@@ -85,7 +104,7 @@ const buildDayTimeline = (day: any) => {
         morningStart !== null && morningEnd !== null
           ? `${toDotTime(morningStart)} - ${toDotTime(morningEnd)}`
           : '06.00 - 09.00',
-      places: slots.morning,
+      places: sortTimelinePlaces(slots.morning),
     },
     {
       key: 'afternoon',
@@ -94,10 +113,29 @@ const buildDayTimeline = (day: any) => {
         afternoonStart !== null && afternoonEnd !== null
           ? `${toDotTime(afternoonStart)} - ${toDotTime(afternoonEnd)}`
           : '15.00 - 17.00',
-      places: slots.afternoon,
+      places: sortTimelinePlaces(slots.afternoon),
     },
   ].filter((slot) => slot.places.length > 0);
 };
+
+const buildDaySchedule = (day: any) =>
+  (day?.places || [])
+    .map((place: any, index: number) => ({
+      place,
+      visitMinutes: toMinutes(place?.visit_time),
+      originalIndex: index,
+    }))
+    .sort((a: any, b: any) => {
+      if (a.visitMinutes === null && b.visitMinutes === null) {
+        return a.originalIndex - b.originalIndex;
+      }
+      if (a.visitMinutes === null) return 1;
+      if (b.visitMinutes === null) return -1;
+      if (a.visitMinutes === b.visitMinutes) {
+        return a.originalIndex - b.originalIndex;
+      }
+      return a.visitMinutes - b.visitMinutes;
+    });
 
 const placesToMapLocations = (places: any[] = []): TripMapLocation[] =>
   places
@@ -264,7 +302,19 @@ export default function TripViewPage() {
                 {trip.description && (
                   <p className="mt-3 text-sm text-slate-300 leading-relaxed">{trip.description}</p>
                 )}
+                {trip.feedback && (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-xs uppercase tracking-[0.12em] text-slate-500">Traveler Feedback</div>
+                    <p className="mt-2 text-sm text-slate-200 leading-relaxed">{trip.feedback}</p>
+                  </div>
+                )}
               </div>
+
+              <TripMediaGallery
+                trip={trip}
+                title="Trip Gallery"
+                emptyText="This itinerary does not have uploaded photos or videos yet."
+              />
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                 <div className="order-2 lg:order-1 lg:col-span-7 space-y-4">
@@ -276,7 +326,7 @@ export default function TripViewPage() {
                     <div className="space-y-4">
                       {(trip.itinerary || []).map((day: any, idx: number) => {
                         const dayNumber = Number(day?.day) || idx + 1;
-                        const timelineSlots = buildDayTimeline(day);
+                        const daySchedule = buildDaySchedule(day);
                         const activeDay = selectedMapDay === dayNumber;
                         return (
                           <section
@@ -300,31 +350,36 @@ export default function TripViewPage() {
                               Day {dayNumber} - Destination
                             </h2>
 
-                            {timelineSlots.length > 0 ? (
+                            {daySchedule.length > 0 ? (
                               <div className="relative mt-4 pl-9">
                                 <div className="absolute left-3 top-1 bottom-1 w-px bg-sky-400/50" />
-                                {timelineSlots.map((slot, slotIndex) => (
+                                {daySchedule.map((entry: any, placeIdx: number) => (
                                   <div
-                                    key={`${dayNumber}-${slot.key}`}
-                                    className={`${slotIndex === timelineSlots.length - 1 ? '' : 'pb-6'} relative`}
+                                    key={`${dayNumber}-${entry.place.name}-${placeIdx}`}
+                                    className={`${placeIdx === daySchedule.length - 1 ? '' : 'pb-6'} relative`}
                                   >
                                     <span className="absolute -left-[26px] top-1.5 w-2.5 h-2.5 rounded-full bg-sky-400" />
                                     <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                                       <div className="md:col-span-2">
-                                        <div className="text-xs font-extrabold tracking-wide uppercase text-slate-100">
-                                          {slot.label}
+                                        <div className="text-xs font-extrabold tracking-wide uppercase text-sky-300">
+                                          {entry.place.visit_time || 'Time not set'}
                                         </div>
-                                        <div className="text-xs font-semibold text-slate-300">({slot.range})</div>
+                                        <div className="text-xs font-semibold text-slate-300">
+                                          {Number.isFinite(Number(entry.place?.duration_minutes)) && Number(entry.place.duration_minutes) > 0
+                                            ? `${Math.round(Number(entry.place.duration_minutes))} min`
+                                            : 'Duration not set'}
+                                        </div>
                                       </div>
-                                      <div className="md:col-span-3 space-y-2">
-                                        {slot.places.map((place: any, placeIdx: number) => (
-                                          <div key={`${slot.key}-${place.name}-${placeIdx}`}>
-                                            <div className="text-sm font-semibold text-slate-100">{place.name}</div>
-                                            <div className="text-sm text-slate-300">
-                                              {place.notes || place.description || 'Destination added to itinerary.'}
-                                            </div>
+                                      <div className="md:col-span-3">
+                                        <div className="text-sm font-semibold text-slate-100">{entry.place.name}</div>
+                                        <div className="text-sm text-slate-300">
+                                          {entry.place.notes || entry.place.description || 'Destination added to itinerary.'}
+                                        </div>
+                                        {placeIdx > 0 && Number.isFinite(Number(entry.place?.travel_minutes_from_previous)) && Number(entry.place.travel_minutes_from_previous) > 0 && (
+                                          <div className="mt-1 text-[11px] text-slate-400">
+                                            Travel from previous: {Math.round(Number(entry.place.travel_minutes_from_previous))} min
                                           </div>
-                                        ))}
+                                        )}
                                       </div>
                                     </div>
                                   </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { authApi } from '@/lib/api';
+import { AuthApiResponse, authApi } from '@/lib/api';
 
 interface User {
   id: string;
@@ -26,8 +26,8 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, username: string, password: string) => Promise<void>;
+  login: (email: string, password: string, otp?: string) => Promise<AuthApiResponse>;
+  register: (email: string, username: string, password: string, otp?: string) => Promise<AuthApiResponse>;
   updateProfile: (profileData: ProfileUpdatePayload) => Promise<void>;
   logout: () => void;
 }
@@ -58,18 +58,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const response = await authApi.login(email, password);
+  const login = async (email: string, password: string, otp?: string) => {
+    const response = await authApi.login(email, password, otp);
     const { access_token, user: userData } = response.data;
-    localStorage.setItem('access_token', access_token);
-    setUser(userData);
+    if (access_token && userData) {
+      localStorage.setItem('access_token', access_token);
+      setUser(userData);
+    }
+    return response.data;
   };
 
-  const register = async (email: string, username: string, password: string) => {
-    const response = await authApi.register(email, username, password);
+  const register = async (email: string, username: string, password: string, otp?: string) => {
+    const response = await authApi.register(email, username, password, otp);
     const { access_token, user: userData } = response.data;
-    localStorage.setItem('access_token', access_token);
-    setUser(userData);
+    if (access_token && userData) {
+      localStorage.setItem('access_token', access_token);
+      setUser(userData);
+    }
+    return response.data;
   };
 
   const updateProfile = async (profileData: ProfileUpdatePayload) => {

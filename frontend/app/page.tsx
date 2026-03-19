@@ -1,16 +1,20 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { placesApi, tripsApi } from '@/lib/api';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { ItineraryBuilder } from '@/components/ItineraryBuilder';
+import { TripMediaGallery, getTripGallery, getTripThumbnail } from '@/components/TripMediaGallery';
 import dynamic from 'next/dynamic';
 import {
   CheckSquare,
   Compass,
   Eye,
+  Flag,
+  Globe2,
+  Image,
   Loader2,
   LogOut,
   Pencil,
@@ -20,9 +24,10 @@ import {
   Square,
   Trash2,
   UserCircle2,
+  Video,
 } from 'lucide-react';
 
-type Pane = 'create' | 'saved' | 'discover' | 'openTrip' | 'builder' | 'profile';
+type Pane = 'create' | 'saved' | 'discover' | 'finished' | 'openTrip' | 'builder' | 'profile';
 type Step = 'destination' | 'details';
 type TripMapLocation = { name: string; lat: number; lng: number };
 type SavedMode = 'itinerary' | 'details';
@@ -36,6 +41,7 @@ const TripMap = dynamic(() => import('@/components/TripMap'), {
 
 const tripId = (trip: any) => trip?._id || trip?.id || '';
 const fmtDate = (value?: string) => (value ? new Date(value).toLocaleDateString() : '-');
+const normalizePlaceName = (value?: string) => (value || '').toLowerCase().trim();
 const recommendationKey = (place: any) => `${place?.name || ''}|${place?.coordinates?.lat ?? ''}|${place?.coordinates?.lng ?? ''}`;
 const placesToMapLocations = (places: any[] = []): TripMapLocation[] =>
   places
@@ -79,7 +85,12 @@ const buildDayTimeline = (day: any) => {
       ? Math.round(Number(place.duration_minutes))
       : 90;
     const slot = visitMinutes !== null ? (visitMinutes < 12 * 60 ? 'morning' : 'afternoon') : (index < Math.ceil(places.length / 2) ? 'morning' : 'afternoon');
-    slots[slot].push(place);
+    slots[slot].push({
+      place,
+      visitMinutes,
+      duration,
+      originalIndex: index,
+    });
 
     if (visitMinutes !== null) {
       const end = visitMinutes + duration;
@@ -93,25 +104,73 @@ const buildDayTimeline = (day: any) => {
     }
   });
 
+  const sortTimelinePlaces = (entries: any[]) =>
+    [...entries].sort((a, b) => {
+      if (a.visitMinutes === null && b.visitMinutes === null) {
+        return a.originalIndex - b.originalIndex;
+      }
+      if (a.visitMinutes === null) return 1;
+      if (b.visitMinutes === null) return -1;
+      if (a.visitMinutes === b.visitMinutes) {
+        return a.originalIndex - b.originalIndex;
+      }
+      return a.visitMinutes - b.visitMinutes;
+    });
+
   return [
     {
       key: 'morning',
       label: 'MORNING',
       range: morningStart !== null && morningEnd !== null ? `${toDotTime(morningStart)} - ${toDotTime(morningEnd)}` : '06.00 - 09.00',
-      places: slots.morning,
+      places: sortTimelinePlaces(slots.morning),
     },
     {
       key: 'afternoon',
       label: 'AFTERNOON',
       range: afternoonStart !== null && afternoonEnd !== null ? `${toDotTime(afternoonStart)} - ${toDotTime(afternoonEnd)}` : '15.00 - 17.00',
-      places: slots.afternoon,
+      places: sortTimelinePlaces(slots.afternoon),
     },
   ].filter((slot) => slot.places.length > 0);
 };
 
+const buildDaySchedule = (day: any) =>
+  (day?.places || [])
+    .map((place: any, index: number) => ({
+      place,
+      visitMinutes: toMinutes(place?.visit_time),
+      originalIndex: index,
+    }))
+    .sort((a: any, b: any) => {
+      if (a.visitMinutes === null && b.visitMinutes === null) {
+        return a.originalIndex - b.originalIndex;
+      }
+      if (a.visitMinutes === null) return 1;
+      if (b.visitMinutes === null) return -1;
+      if (a.visitMinutes === b.visitMinutes) {
+        return a.originalIndex - b.originalIndex;
+      }
+      return a.visitMinutes - b.visitMinutes;
+    });
+
+const normalizeMediaInput = (type: 'image' | 'video', url: string, caption: string) => ({
+  id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  type,
+  url: url.trim(),
+  caption: caption.trim(),
+});
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(new Error('Failed to read file.'));
+    reader.readAsDataURL(file);
+  });
+
 export default function HomePage() {
   const router = useRouter();
   const { user, logout, updateProfile } = useAuth();
+  const finishedEditorRef = useRef<HTMLDivElement | null>(null);
 
   const [pane, setPane] = useState<Pane>('create');
   const [step, setStep] = useState<Step>('destination');
@@ -120,6 +179,7 @@ export default function HomePage() {
   const [trips, setTrips] = useState<any[]>([]);
   const [tripsLoading, setTripsLoading] = useState(true);
   const [selectedTripId, setSelectedTripId] = useState('');
+  const [finishedTripId, setFinishedTripId] = useState('');
 
   const [publicTrips, setPublicTrips] = useState<any[]>([]);
   const [publicTripsLoading, setPublicTripsLoading] = useState(false);
@@ -147,9 +207,13 @@ export default function HomePage() {
 
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [editPublic, setEditPublic] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [finishedPublic, setFinishedPublic] = useState(false);
+  const [finishedChecked, setFinishedChecked] = useState(false);
+  const [finishedCoverImage, setFinishedCoverImage] = useState('');
+  const [finishedFeedback, setFinishedFeedback] = useState('');
+  const [finishedSaving, setFinishedSaving] = useState(false);
 
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -180,10 +244,30 @@ export default function HomePage() {
     () => trips.find((trip) => tripId(trip) === selectedTripId),
     [trips, selectedTripId]
   );
+  const finishedSelectedTrip = useMemo(
+    () => trips.find((trip) => tripId(trip) === finishedTripId),
+    [trips, finishedTripId]
+  );
 
   const openedCurrentDay = useMemo(
     () => openedTrip?.itinerary?.[openedDay - 1] || null,
     [openedTrip, openedDay]
+  );
+  const openedTripPlaceNames = useMemo(
+    () =>
+      new Set(
+        (openedTrip?.itinerary || []).flatMap((day: any) =>
+          (day?.places || []).map((place: any) => normalizePlaceName(place?.name))
+        )
+      ),
+    [openedTrip]
+  );
+  const visibleOpenedRecommendations = useMemo(
+    () =>
+      openedRecommendations.filter(
+        (place: any) => !openedTripPlaceNames.has(normalizePlaceName(place?.name))
+      ),
+    [openedRecommendations, openedTripPlaceNames]
   );
 
   const openedMapLocations: TripMapLocation[] = useMemo(() => {
@@ -234,13 +318,26 @@ export default function HomePage() {
     );
   }, [publicTrips, discoverQuery]);
 
-  const publicTripsCount = useMemo(
-    () => trips.filter((trip) => !!trip?.is_public).length,
+  const finishedTripMedia = useMemo(() => getTripGallery(finishedSelectedTrip), [finishedSelectedTrip]);
+  const finishedTripThumbnail = useMemo(() => getTripThumbnail(finishedSelectedTrip), [finishedSelectedTrip]);
+  const finishedPaneTrips = useMemo(
+    () =>
+      [...trips].sort((a, b) => {
+        const aFinished = a?.is_finished ? 1 : 0;
+        const bFinished = b?.is_finished ? 1 : 0;
+        if (aFinished !== bFinished) return bFinished - aFinished;
+        return String(b?.updated_at || b?.created_at || '').localeCompare(String(a?.updated_at || a?.created_at || ''));
+      }),
     [trips]
   );
 
-  const totalItineraryDays = useMemo(
-    () => trips.reduce((sum, trip) => sum + (Array.isArray(trip?.itinerary) ? trip.itinerary.length : 0), 0),
+  const publicTripsCount = useMemo(
+    () => trips.filter((trip) => !!trip?.is_public && !!trip?.is_finished).length,
+    [trips]
+  );
+
+  const finishedTripsCount = useMemo(
+    () => trips.filter((trip) => !!trip?.is_finished).length,
     [trips]
   );
 
@@ -270,13 +367,34 @@ export default function HomePage() {
     if (!selectedTrip) return;
     setEditTitle(selectedTrip.title || '');
     setEditDescription(selectedTrip.description || '');
-    setEditPublic(!!selectedTrip.is_public);
     if (!(pane === 'saved' && savedMode === 'details')) {
       setSavedMode('itinerary');
     }
     setSavedMapDay(null);
     setMessage('');
-  }, [selectedTrip?.title, selectedTrip?.description, selectedTrip?.is_public, selectedTripId, pane, savedMode]);
+  }, [
+    selectedTrip?.title,
+    selectedTrip?.description,
+    selectedTripId,
+    pane,
+    savedMode,
+  ]);
+
+  useEffect(() => {
+    if (!finishedSelectedTrip) return;
+    setFinishedPublic(!!finishedSelectedTrip.is_public);
+    setFinishedChecked(!!finishedSelectedTrip.is_finished);
+    setFinishedCoverImage(getTripThumbnail(finishedSelectedTrip));
+    setFinishedFeedback(String(finishedSelectedTrip.feedback || ''));
+  }, [
+    finishedSelectedTrip?.title,
+    finishedSelectedTrip?.feedback,
+    finishedSelectedTrip?.is_public,
+    finishedSelectedTrip?.is_finished,
+    finishedSelectedTrip?.cover_image,
+    finishedSelectedTrip?.media_gallery,
+    finishedTripId,
+  ]);
 
   useEffect(() => {
     if (pane === 'discover' && publicTrips.length === 0) loadPublicTrips();
@@ -288,6 +406,12 @@ export default function HomePage() {
     }
     loadOpenedRecommendations(openedTrip.end_location);
   }, [openedTrip?.end_location, pane, openedDay]);
+
+  useEffect(() => {
+    setOpenedSelectedRecKeys((prev) =>
+      prev.filter((key) => visibleOpenedRecommendations.some((place: any) => recommendationKey(place) === key))
+    );
+  }, [visibleOpenedRecommendations]);
 
   useEffect(() => {
     if (pane !== 'openTrip' || !openedTrip?.start_location || !openedTrip?.end_location) {
@@ -400,6 +524,18 @@ export default function HomePage() {
       setError(e?.response?.data?.detail || e?.message || 'Failed to load discover trips');
     } finally {
       setPublicTripsLoading(false);
+    }
+  };
+
+  const syncTripLocally = (updatedTrip: any) => {
+    const id = tripId(updatedTrip);
+    if (!id) return;
+    setTrips((prev) => prev.map((trip) => (tripId(trip) === id ? { ...trip, ...updatedTrip } : trip)));
+    if (openedTrip && tripId(openedTrip) === id) {
+      setOpenedTrip((prev: any) => ({ ...(prev || {}), ...updatedTrip }));
+    }
+    if (discoverViewedTrip && tripId(discoverViewedTrip) === id) {
+      setDiscoverViewedTrip((prev: any) => ({ ...(prev || {}), ...updatedTrip }));
     }
   };
 
@@ -544,6 +680,20 @@ export default function HomePage() {
     }
   };
 
+  const openFinishedPane = () => {
+    setFinishedTripId('');
+    setPane('finished');
+    setError('');
+    setMessage('');
+  };
+
+  const handleFinishedTileSelect = (id: string) => {
+    setFinishedTripId(id);
+    setTimeout(() => {
+      finishedEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  };
+
   const refreshOpenedTrip = async () => {
     if (!openedTrip) return;
     try {
@@ -589,9 +739,11 @@ export default function HomePage() {
   const addSelectedRecommendations = async () => {
     if (openedSelectedRecKeys.length === 0) return;
     setOpenedAddingSelected(true);
-    const existing = new Set((openedCurrentDay?.places || []).map((place: any) => place.name));
+    const existing = new Set(
+      (openedTrip?.itinerary || []).flatMap((day: any) => (day?.places || []).map((place: any) => place.name))
+    );
     try {
-      for (const place of openedRecommendations) {
+      for (const place of visibleOpenedRecommendations) {
         const key = recommendationKey(place);
         if (!openedSelectedRecKeys.includes(key)) continue;
         if (existing.has(place.name)) continue;
@@ -697,10 +849,8 @@ export default function HomePage() {
       const res = await tripsApi.updateTrip(selectedTripId, {
         title: editTitle.trim(),
         description: editDescription.trim(),
-        is_public: editPublic,
       });
-      const updated = res.data;
-      setTrips((prev) => prev.map((trip) => (tripId(trip) === selectedTripId ? { ...trip, ...updated } : trip)));
+      syncTripLocally(res.data);
       await loadPublicTrips();
       setPane('create');
       setStep('destination');
@@ -723,6 +873,91 @@ export default function HomePage() {
     }
   };
 
+  const saveFinishedTrip = async (nextGallery?: any[], nextCoverImage?: string) => {
+    if (!finishedTripId) return;
+    const gallery = nextGallery || finishedTripMedia;
+    const normalizedCover = (nextCoverImage ?? finishedCoverImage).trim();
+    setFinishedSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      const res = await tripsApi.updateTrip(finishedTripId, {
+        feedback: finishedFeedback.trim(),
+        is_finished: finishedChecked,
+        is_public: finishedChecked ? finishedPublic : false,
+        cover_image: normalizedCover || getTripThumbnail({ media_gallery: gallery }) || null,
+        media_gallery: gallery,
+      });
+      syncTripLocally(res.data);
+      await loadPublicTrips();
+      setMessage(finishedChecked ? 'Finished trip updated.' : 'Trip saved without publishing.');
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || e?.message || 'Failed to update finished trip');
+    } finally {
+      setFinishedSaving(false);
+    }
+  };
+
+  const removeFinishedMedia = async (mediaId: string) => {
+    if (!finishedSelectedTrip) return;
+    const nextGallery = finishedTripMedia.filter((item: any) => item.id !== mediaId);
+    const nextCover = finishedCoverImage.trim();
+    if (nextCover && !nextGallery.some((item: any) => item.type === 'image' && item.url === nextCover)) {
+      setFinishedCoverImage(nextGallery.find((item: any) => item.type === 'image')?.url || '');
+    }
+    await saveFinishedTrip(
+      nextGallery,
+      nextCover && nextGallery.some((item: any) => item.type === 'image' && item.url === nextCover)
+        ? nextCover
+        : nextGallery.find((item: any) => item.type === 'image')?.url || ''
+    );
+  };
+
+  const uploadFinishedMedia = async (type: 'image' | 'video', files: FileList | null) => {
+    const fileItems = files ? Array.from(files) : [];
+    if (fileItems.length === 0) return;
+    try {
+      const uploaded: any[] = [];
+      for (const file of fileItems) {
+        const dataUrl = await readFileAsDataUrl(file);
+        if (!dataUrl) {
+          setError(`Failed to read ${type} file.`);
+          return;
+        }
+        uploaded.push(normalizeMediaInput(type, dataUrl, file.name));
+      }
+
+      const nextGallery = [...finishedTripMedia, ...uploaded];
+      const nextCover =
+        type === 'image' && !finishedCoverImage.trim() ? uploaded[0]?.url || finishedCoverImage : finishedCoverImage;
+      setFinishedCoverImage(nextCover);
+      await saveFinishedTrip(nextGallery, nextCover);
+    } catch (e: any) {
+      setError(e?.message || `Failed to upload ${type}.`);
+    }
+  };
+
+  const uploadFinishedThumbnail = async (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      if (!dataUrl) {
+        setError('Failed to read thumbnail image.');
+        return;
+      }
+      setFinishedCoverImage(dataUrl);
+      await saveFinishedTrip(undefined, dataUrl);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to upload thumbnail image.');
+    }
+  };
+
+  const setFinishedThumbnail = async (url: string) => {
+    setFinishedCoverImage(url);
+    await saveFinishedTrip(undefined, url);
+  };
+
   const deleteSelectedTrip = async () => {
     if (!selectedTripId) return;
     if (!confirm('Delete this trip permanently?')) return;
@@ -733,6 +968,9 @@ export default function HomePage() {
       await tripsApi.deleteTrip(selectedTripId);
       const next = trips.filter((trip) => tripId(trip) !== selectedTripId);
       setTrips(next);
+      if (finishedTripId === selectedTripId) {
+        setFinishedTripId('');
+      }
       setSelectedTripId(next.length ? tripId(next[0]) : '');
       await loadPublicTrips();
       setMessage('Trip deleted.');
@@ -798,6 +1036,17 @@ export default function HomePage() {
             >
               <Compass size={18} />
               <span className="font-medium">Discover</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={openFinishedPane}
+              className={`w-full mt-2 rounded-xl px-3 py-3 text-left transition flex items-center gap-3 ${
+                pane === 'finished' ? 'bg-white/12 text-white' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+              }`}
+            >
+              <Flag size={18} />
+              <span className="font-medium">Finished Trip</span>
             </button>
 
             <div className="mt-5 px-2 text-xs uppercase tracking-[0.12em] text-slate-500">Saved Trips</div>
@@ -1166,9 +1415,9 @@ export default function HomePage() {
                         </div>
                         {openedRecLoading ? (
                           <div className="text-sm text-slate-400">Loading recommendations...</div>
-                        ) : openedRecommendations.length > 0 ? (
+                        ) : visibleOpenedRecommendations.length > 0 ? (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
-                            {openedRecommendations.map((place: any, idx: number) => {
+                            {visibleOpenedRecommendations.map((place: any, idx: number) => {
                               const key = recommendationKey(place);
                               const selected = openedSelectedRecKeys.includes(key);
                               return (
@@ -1199,6 +1448,8 @@ export default function HomePage() {
                               );
                             })}
                           </div>
+                        ) : openedRecommendations.length > 0 ? (
+                          <div className="text-sm text-slate-400">All recommended places are already added to this trip.</div>
                         ) : (
                           <div className="text-sm text-slate-400">No recommendations available.</div>
                         )}
@@ -1280,16 +1531,10 @@ export default function HomePage() {
                               />
                             </div>
                             <div>
-                              <label className="block text-sm text-slate-300 mb-1">Visibility</label>
-                              <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm">
-                                <input
-                                  type="checkbox"
-                                  checked={editPublic}
-                                  onChange={(e) => setEditPublic(e.target.checked)}
-                                  className="accent-sky-500"
-                                />
-                                Public trip
-                              </label>
+                              <label className="block text-sm text-slate-300 mb-1">Finished Trip</label>
+                              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-300">
+                                Photos, videos, thumbnail, and public discovery settings now live in `Finished Trip`.
+                              </div>
                             </div>
                           </div>
 
@@ -1325,6 +1570,13 @@ export default function HomePage() {
                               className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-400"
                             >
                               Open Trip Editor
+                            </button>
+                            <button
+                              type="button"
+                              onClick={openFinishedPane}
+                              className="rounded-lg border border-white/15 px-4 py-2 text-sm text-slate-200 hover:bg-white/10"
+                            >
+                              Manage Finished Trip
                             </button>
                             <button
                               type="button"
@@ -1377,7 +1629,7 @@ export default function HomePage() {
                                 <div className="space-y-4">
                                   {(selectedTrip.itinerary || []).map((day: any, idx: number) => {
                                     const dayNumber = Number(day?.day) || idx + 1;
-                                    const timelineSlots = buildDayTimeline(day);
+                                    const daySchedule = buildDaySchedule(day);
                                     const activeDay = savedMapDay === dayNumber;
                                     return (
                                       <section
@@ -1401,26 +1653,33 @@ export default function HomePage() {
                                           Day {dayNumber} - Destination
                                         </h3>
 
-                                        {timelineSlots.length > 0 ? (
+                                        {daySchedule.length > 0 ? (
                                           <div className="relative mt-4 pl-9">
                                             <div className="absolute left-3 top-1 bottom-1 w-px bg-sky-400/50" />
-                                            {timelineSlots.map((slot, slotIndex) => (
-                                              <div key={`${dayNumber}-${slot.key}`} className={`${slotIndex === timelineSlots.length - 1 ? '' : 'pb-6'} relative`}>
+                                            {daySchedule.map((entry: any, placeIdx: number) => (
+                                              <div key={`${dayNumber}-${entry.place.name}-${placeIdx}`} className={`${placeIdx === daySchedule.length - 1 ? '' : 'pb-6'} relative`}>
                                                 <span className="absolute -left-[26px] top-1.5 w-2.5 h-2.5 rounded-full bg-sky-400" />
                                                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                                                   <div className="md:col-span-2">
-                                                    <div className="text-xs font-extrabold tracking-wide uppercase text-slate-100">{slot.label}</div>
-                                                    <div className="text-xs font-semibold text-slate-300">({slot.range})</div>
+                                                    <div className="text-xs font-extrabold tracking-wide uppercase text-sky-300">
+                                                      {entry.place.visit_time || 'Time not set'}
+                                                    </div>
+                                                    <div className="text-xs font-semibold text-slate-300">
+                                                      {Number.isFinite(Number(entry.place?.duration_minutes)) && Number(entry.place.duration_minutes) > 0
+                                                        ? `${Math.round(Number(entry.place.duration_minutes))} min`
+                                                        : 'Duration not set'}
+                                                    </div>
                                                   </div>
-                                                  <div className="md:col-span-3 space-y-2">
-                                                    {slot.places.map((place: any, placeIdx: number) => (
-                                                      <div key={`${slot.key}-${place.name}-${placeIdx}`}>
-                                                        <div className="text-sm font-semibold text-slate-100">{place.name}</div>
-                                                        <div className="text-sm text-slate-300">
-                                                          {place.notes || place.description || 'Destination added to itinerary.'}
-                                                        </div>
+                                                  <div className="md:col-span-3">
+                                                    <div className="text-sm font-semibold text-slate-100">{entry.place.name}</div>
+                                                    <div className="text-sm text-slate-300">
+                                                      {entry.place.notes || entry.place.description || 'Destination added to itinerary.'}
+                                                    </div>
+                                                    {placeIdx > 0 && Number.isFinite(Number(entry.place?.travel_minutes_from_previous)) && Number(entry.place.travel_minutes_from_previous) > 0 && (
+                                                      <div className="mt-1 text-[11px] text-slate-400">
+                                                        Travel from previous: {Math.round(Number(entry.place.travel_minutes_from_previous))} min
                                                       </div>
-                                                    ))}
+                                                    )}
                                                   </div>
                                                 </div>
                                               </div>
@@ -1519,6 +1778,312 @@ export default function HomePage() {
                   )}
                 </div>
               )}
+              {pane === 'finished' && (
+                <div className="max-w-6xl mx-auto py-6">
+                  {finishedTripId && finishedSelectedTrip ? (
+                    <div ref={finishedEditorRef} className="rounded-3xl border border-white/10 bg-[#12161d]/90 p-6 md:p-8 space-y-5">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.12em] text-slate-500">Finished Trip</div>
+                          <h2 className="mt-1 text-3xl font-semibold">{finishedSelectedTrip.title}</h2>
+                          <p className="mt-2 text-sm text-slate-300">
+                            {finishedSelectedTrip.start_location} to {finishedSelectedTrip.end_location}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {fmtDate(finishedSelectedTrip.start_date)} to {fmtDate(finishedSelectedTrip.end_date)} | {finishedSelectedTrip.itinerary?.length || 0} days
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setFinishedTripId('')}
+                            className="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-200 hover:bg-white/10"
+                          >
+                            Back
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => saveFinishedTrip()}
+                            disabled={finishedSaving}
+                            className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-60"
+                          >
+                            {finishedSaving ? <Loader2 size={15} className="animate-spin" /> : <Flag size={15} />}
+                            Save Finished Trip
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                        <div className="lg:col-span-7 space-y-4">
+                          <div className="rounded-2xl border border-white/10 bg-[#11161f] p-4 md:p-5 space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                                <div className="text-sm font-semibold text-slate-100">Thumbnail Source</div>
+                                <p className="mt-2 text-xs text-slate-500">
+                                  Discovery uses the selected thumbnail image below. If none is chosen, the first uploaded photo is used automatically.
+                                </p>
+                                <label className="mt-4 block rounded-xl border border-dashed border-white/15 bg-[#0d1118] px-3 py-3 text-sm text-slate-300 cursor-pointer hover:border-sky-400/40">
+                                  Upload thumbnail from device
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      void uploadFinishedThumbnail(e.target.files);
+                                      e.currentTarget.value = '';
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                                <div className="text-xs uppercase tracking-[0.12em] text-slate-500">Thumbnail Preview</div>
+                                <div className="mt-3 aspect-video overflow-hidden rounded-lg border border-white/10 bg-[#0d1118]">
+                                  {finishedCoverImage.trim() || finishedTripThumbnail ? (
+                                    <img
+                                      src={finishedCoverImage.trim() || finishedTripThumbnail}
+                                      alt={`${finishedSelectedTrip.title} thumbnail`}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-full items-center justify-center text-sm text-slate-400">
+                                      Add a photo to generate a thumbnail.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                                  <Image size={16} className="text-sky-300" />
+                                  Add Picture
+                                </div>
+                                <div className="mt-3 space-y-3">
+                                  <p className="text-xs text-slate-500">
+                                    Browse image files from your PC and upload them to this finished trip.
+                                  </p>
+                                  <label className="block rounded-xl border border-dashed border-white/15 bg-[#0d1118] px-3 py-3 text-sm text-slate-300 cursor-pointer hover:border-sky-400/40">
+                                    Upload image file
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      multiple
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        void uploadFinishedMedia('image', e.target.files);
+                                        e.currentTarget.value = '';
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+
+                              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                                  <Video size={16} className="text-sky-300" />
+                                  Add Video
+                                </div>
+                                <div className="mt-3 space-y-3">
+                                  <p className="text-xs text-slate-500">
+                                    Browse video files from your PC and upload them to this finished trip.
+                                  </p>
+                                  <label className="block rounded-xl border border-dashed border-white/15 bg-[#0d1118] px-3 py-3 text-sm text-slate-300 cursor-pointer hover:border-sky-400/40">
+                                    Upload video file
+                                    <input
+                                      type="file"
+                                      accept="video/*"
+                                      multiple
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        void uploadFinishedMedia('video', e.target.files);
+                                        e.currentTarget.value = '';
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                              <div className="text-sm font-semibold text-slate-100">Current Media</div>
+                              {finishedTripMedia.length > 0 ? (
+                                <div className="mt-3 space-y-2">
+                                  {finishedTripMedia.map((item: any) => {
+                                    const isThumbnail = (finishedCoverImage.trim() || finishedTripThumbnail) === item.url;
+                                    return (
+                                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#0d1118] px-3 py-2.5">
+                                        <div className="min-w-0">
+                                          <div className="text-sm text-slate-100">
+                                            {item.caption || (item.type === 'image' ? 'Trip photo' : 'Trip video')}
+                                          </div>
+                                          <div className="truncate text-xs text-slate-400">
+                                            {item.type === 'image' ? 'Image file' : 'Video file'}
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {item.type === 'image' && (
+                                            <button
+                                              type="button"
+                                              onClick={() => void setFinishedThumbnail(item.url)}
+                                              className={`rounded-lg px-3 py-1.5 text-xs ${
+                                                isThumbnail
+                                                  ? 'border border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
+                                                  : 'border border-white/15 bg-white/5 text-slate-200 hover:bg-white/10'
+                                              }`}
+                                            >
+                                              {isThumbnail ? 'Thumbnail' : 'Set Thumbnail'}
+                                            </button>
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={() => removeFinishedMedia(item.id)}
+                                            className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/20"
+                                          >
+                                            Remove
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="mt-3 text-sm text-slate-400">No pictures or videos added yet.</div>
+                              )}
+                            </div>
+
+                            <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                              <div className="text-sm font-semibold text-slate-100">Feedback</div>
+                              <p className="mt-2 text-xs text-slate-500">
+                                Add your finished-trip feedback or overall experience for this itinerary.
+                              </p>
+                              <textarea
+                                value={finishedFeedback}
+                                onChange={(e) => setFinishedFeedback(e.target.value)}
+                                rows={5}
+                                placeholder="Share your feedback about the trip..."
+                                className="mt-3 w-full rounded-xl border border-white/10 bg-[#0d1118] px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-sky-400/50"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="lg:col-span-5 space-y-4">
+                          <div className="rounded-2xl border border-white/10 bg-[#11161f] p-4 md:p-5 space-y-4">
+                            <div className="text-xs uppercase tracking-[0.12em] text-slate-500">Publishing</div>
+                            <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+                              <input
+                                type="checkbox"
+                                checked={finishedChecked}
+                                onChange={(e) => {
+                                  const next = e.target.checked;
+                                  setFinishedChecked(next);
+                                  if (!next) setFinishedPublic(false);
+                                }}
+                                className="accent-sky-500"
+                              />
+                              Mark this trip as finished
+                            </label>
+                            <label className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm ${
+                              finishedChecked
+                                ? 'border-white/10 bg-white/5 text-slate-200'
+                                : 'border-white/5 bg-white/[0.03] text-slate-500'
+                            }`}>
+                              <input
+                                type="checkbox"
+                                checked={finishedPublic}
+                                disabled={!finishedChecked}
+                                onChange={(e) => setFinishedPublic(e.target.checked)}
+                                className="accent-sky-500"
+                              />
+                              Show this finished trip in Discovery
+                            </label>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                                <div className="text-xs uppercase tracking-[0.1em] text-slate-500">Media Items</div>
+                                <div className="mt-2 text-2xl font-semibold text-slate-100">{finishedTripMedia.length}</div>
+                              </div>
+                              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                                <div className="text-xs uppercase tracking-[0.1em] text-slate-500">Discovery Status</div>
+                                <div className="mt-2 text-sm font-semibold text-slate-100">
+                                  {finishedChecked ? (finishedPublic ? 'Public' : 'Private') : 'Not finished'}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+                              Discovery now shows only trips marked as finished and then made public here.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <TripMediaGallery
+                        trip={{
+                          ...finishedSelectedTrip,
+                          cover_image: finishedCoverImage.trim() || finishedSelectedTrip.cover_image,
+                        }}
+                        title="Finished Trip Gallery"
+                        emptyText="Add images or videos above to build the finished trip gallery."
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-3xl border border-white/10 bg-[#12161d]/90 p-6 md:p-8 space-y-5">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.12em] text-slate-500">Trip Tiles</div>
+                        <div className="mt-1 text-sm text-slate-300">
+                          Click a tile to replace this view with that trip&apos;s finished-trip editor.
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {finishedPaneTrips.map((trip) => {
+                          const id = tripId(trip);
+                          const thumb = getTripThumbnail(trip);
+                          const mediaCount = getTripGallery(trip).length;
+                          return (
+                            <button
+                              key={`finished-tile-${id}`}
+                              type="button"
+                              onClick={() => handleFinishedTileSelect(id)}
+                              className="overflow-hidden rounded-2xl border border-white/10 bg-[#11161f] text-left transition hover:border-white/20"
+                            >
+                              <div className="aspect-[16/8] border-b border-white/10 bg-[#0d1118]">
+                                {thumb ? (
+                                  <img src={thumb} alt={trip.title} className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                                    No thumbnail
+                                  </div>
+                                )}
+                              </div>
+                              <div className="p-4">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="text-base font-semibold text-slate-100">{trip.title}</div>
+                                  {trip?.is_finished && (
+                                    <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+                                      Finished
+                                    </span>
+                                  )}
+                                  {trip?.is_public && trip?.is_finished && (
+                                    <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
+                                      Public
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-2 text-sm text-slate-300">{trip.start_location} to {trip.end_location}</div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  {fmtDate(trip.start_date)} to {fmtDate(trip.end_date)} | {mediaCount} media item{mediaCount === 1 ? '' : 's'}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               {pane === 'discover' && (
                 <div className="max-w-6xl mx-auto py-6">
                   {discoverMode === 'view' ? (
@@ -1550,7 +2115,19 @@ export default function HomePage() {
                             {discoverViewedTrip.description && (
                               <p className="mt-2 text-sm text-slate-300 leading-relaxed">{discoverViewedTrip.description}</p>
                             )}
+                            {discoverViewedTrip.feedback && (
+                              <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+                                <div className="text-xs uppercase tracking-[0.12em] text-slate-500">Traveler Feedback</div>
+                                <p className="mt-2 text-sm text-slate-200 leading-relaxed">{discoverViewedTrip.feedback}</p>
+                              </div>
+                            )}
                           </div>
+
+                          <TripMediaGallery
+                            trip={discoverViewedTrip}
+                            title="Trip Gallery"
+                            emptyText="This finished trip does not have photos or videos yet."
+                          />
 
                           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                             <div className="order-2 lg:order-1 lg:col-span-7 space-y-4">
@@ -1562,7 +2139,7 @@ export default function HomePage() {
                                 <div className="space-y-4">
                                   {(discoverViewedTrip.itinerary || []).map((day: any, idx: number) => {
                                     const dayNumber = Number(day?.day) || idx + 1;
-                                    const timelineSlots = buildDayTimeline(day);
+                                    const daySchedule = buildDaySchedule(day);
                                     const activeDay = discoverMapDay === dayNumber;
                                     return (
                                       <section
@@ -1586,26 +2163,33 @@ export default function HomePage() {
                                           Day {dayNumber} - Destination
                                         </h3>
 
-                                        {timelineSlots.length > 0 ? (
+                                        {daySchedule.length > 0 ? (
                                           <div className="relative mt-4 pl-9">
                                             <div className="absolute left-3 top-1 bottom-1 w-px bg-sky-400/50" />
-                                            {timelineSlots.map((slot, slotIndex) => (
-                                              <div key={`${dayNumber}-${slot.key}`} className={`${slotIndex === timelineSlots.length - 1 ? '' : 'pb-6'} relative`}>
+                                            {daySchedule.map((entry: any, placeIdx: number) => (
+                                              <div key={`${dayNumber}-${entry.place.name}-${placeIdx}`} className={`${placeIdx === daySchedule.length - 1 ? '' : 'pb-6'} relative`}>
                                                 <span className="absolute -left-[26px] top-1.5 w-2.5 h-2.5 rounded-full bg-sky-400" />
                                                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                                                   <div className="md:col-span-2">
-                                                    <div className="text-xs font-extrabold tracking-wide uppercase text-slate-100">{slot.label}</div>
-                                                    <div className="text-xs font-semibold text-slate-300">({slot.range})</div>
+                                                    <div className="text-xs font-extrabold tracking-wide uppercase text-sky-300">
+                                                      {entry.place.visit_time || 'Time not set'}
+                                                    </div>
+                                                    <div className="text-xs font-semibold text-slate-300">
+                                                      {Number.isFinite(Number(entry.place?.duration_minutes)) && Number(entry.place.duration_minutes) > 0
+                                                        ? `${Math.round(Number(entry.place.duration_minutes))} min`
+                                                        : 'Duration not set'}
+                                                    </div>
                                                   </div>
-                                                  <div className="md:col-span-3 space-y-2">
-                                                    {slot.places.map((place: any, placeIdx: number) => (
-                                                      <div key={`${slot.key}-${place.name}-${placeIdx}`}>
-                                                        <div className="text-sm font-semibold text-slate-100">{place.name}</div>
-                                                        <div className="text-sm text-slate-300">
-                                                          {place.notes || place.description || 'Destination added to itinerary.'}
-                                                        </div>
+                                                  <div className="md:col-span-3">
+                                                    <div className="text-sm font-semibold text-slate-100">{entry.place.name}</div>
+                                                    <div className="text-sm text-slate-300">
+                                                      {entry.place.notes || entry.place.description || 'Destination added to itinerary.'}
+                                                    </div>
+                                                    {placeIdx > 0 && Number.isFinite(Number(entry.place?.travel_minutes_from_previous)) && Number(entry.place.travel_minutes_from_previous) > 0 && (
+                                                      <div className="mt-1 text-[11px] text-slate-400">
+                                                        Travel from previous: {Math.round(Number(entry.place.travel_minutes_from_previous))} min
                                                       </div>
-                                                    ))}
+                                                    )}
                                                   </div>
                                                 </div>
                                               </div>
@@ -1706,7 +2290,7 @@ export default function HomePage() {
                       <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
                         <div>
                           <h2 className="text-3xl font-semibold">Discover Trips</h2>
-                          <p className="text-sm text-slate-400">View available public trips and open actions.</p>
+                          <p className="text-sm text-slate-400">Browse finished trips that travelers have chosen to publish.</p>
                         </div>
                         <button type="button" onClick={loadPublicTrips} className="rounded-lg border border-white/15 px-4 py-2 text-sm text-slate-200 hover:bg-white/10">Refresh</button>
                       </div>
@@ -1728,12 +2312,36 @@ export default function HomePage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {filteredPublicTrips.map((trip) => {
                             const id = tripId(trip);
+                            const thumbnail = getTripThumbnail(trip);
                             return (
-                              <div key={id} className="rounded-2xl border border-white/10 bg-[#12161d]/90 p-5">
-                                <h3 className="text-xl font-semibold">{trip.title}</h3>
-                                <p className="mt-2 text-sm text-slate-300">{trip.start_location} to {trip.end_location}</p>
-                                <p className="text-xs text-slate-400 mt-1">{fmtDate(trip.start_date)} to {fmtDate(trip.end_date)} | {trip.itinerary?.length || 0} days</p>
-                                <div className="flex flex-wrap gap-2 mt-4">
+                              <div key={id} className="overflow-hidden rounded-2xl border border-white/10 bg-[#12161d]/90">
+                                <div className="aspect-[16/8] border-b border-white/10 bg-[#0d1118]">
+                                  {thumbnail ? (
+                                    <img src={thumbnail} alt={trip.title} className="h-full w-full object-cover" />
+                                  ) : (
+                                    <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                                      No thumbnail yet
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="p-5">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <h3 className="text-xl font-semibold">{trip.title}</h3>
+                                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">
+                                      <Globe2 size={12} />
+                                      Finished
+                                    </span>
+                                  </div>
+                                  <p className="mt-2 text-sm text-slate-300">{trip.start_location} to {trip.end_location}</p>
+                                  <p className="text-xs text-slate-400 mt-1">{fmtDate(trip.start_date)} to {fmtDate(trip.end_date)} | {trip.itinerary?.length || 0} days</p>
+                                  <p className="mt-3 line-clamp-2 text-sm text-slate-400">
+                                    {trip.description || 'Published finished itinerary with media and route details.'}
+                                  </p>
+                                  <div className="mt-3 text-xs text-slate-500">
+                                    {getTripGallery(trip).length} media item{getTripGallery(trip).length === 1 ? '' : 's'}
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2 border-t border-white/10 px-5 py-4">
                                   <button type="button" onClick={() => openDiscoverTripView(id)} className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-400"><Eye size={13} />View</button>
                                 </div>
                               </div>
@@ -1741,7 +2349,7 @@ export default function HomePage() {
                           })}
                         </div>
                       ) : (
-                        <div className="text-center text-slate-400 py-10">No public trips found.</div>
+                        <div className="text-center text-slate-400 py-10">No public finished trips found.</div>
                       )}
                     </div>
                   )}
@@ -1810,12 +2418,12 @@ export default function HomePage() {
                         <div className="mt-2 text-2xl font-semibold text-slate-100">{trips.length}</div>
                       </div>
                       <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                        <div className="text-xs text-slate-400 uppercase tracking-[0.1em]">Public Trips</div>
-                        <div className="mt-2 text-2xl font-semibold text-slate-100">{publicTripsCount}</div>
+                        <div className="text-xs text-slate-400 uppercase tracking-[0.1em]">Finished Trips</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-100">{finishedTripsCount}</div>
                       </div>
                       <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                        <div className="text-xs text-slate-400 uppercase tracking-[0.1em]">Itinerary Days</div>
-                        <div className="mt-2 text-2xl font-semibold text-slate-100">{totalItineraryDays}</div>
+                        <div className="text-xs text-slate-400 uppercase tracking-[0.1em]">Public Finished Trips</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-100">{publicTripsCount}</div>
                       </div>
                     </div>
 

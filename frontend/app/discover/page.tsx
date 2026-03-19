@@ -42,7 +42,7 @@ export default function DiscoverPage() {
               <Globe size={36} />
               Discover Trips
             </h1>
-            <p className="text-xl">Explore amazing journeys from travelers around the world</p>
+            <p className="text-xl">Explore finished journeys that travelers have chosen to publish</p>
           </div>
         </div>
 
@@ -76,7 +76,7 @@ export default function DiscoverPage() {
           ) : (
             <div className="bg-white rounded-lg p-12 text-center">
               <Globe size={48} className="mx-auto text-gray-400 mb-4" />
-              <h3 className="text-xl font-bold text-gray-800 mb-2">No trips found</h3>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">No finished trips found</h3>
               <p className="text-gray-600">Try adjusting your search</p>
             </div>
           )}

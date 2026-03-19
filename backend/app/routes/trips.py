@@ -1,10 +1,63 @@
 from fastapi import APIRouter, HTTPException, status, Header
-from typing import Optional
+from typing import Optional, Any, Dict
 from app.models.trip import TripCreate, TripUpdate, Place
 from app.services.trip_service import TripService
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/api/trips", tags=["trips"])
+
+
+def normalize_place_payload(raw_place: Dict[str, Any]) -> Place:
+    """Coerce recommendation/manual place payloads into the stored Place shape."""
+    coords = raw_place.get("coordinates") if isinstance(raw_place.get("coordinates"), dict) else {}
+
+    lat_raw = coords.get("lat", coords.get("latitude"))
+    if lat_raw is None:
+        lat_raw = raw_place.get("lat", raw_place.get("latitude"))
+
+    lng_raw = coords.get("lng", coords.get("lon", coords.get("longitude")))
+    if lng_raw is None:
+        lng_raw = raw_place.get("lng", raw_place.get("lon", raw_place.get("longitude")))
+
+    def to_float(value: Any, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    name = str(raw_place.get("name") or raw_place.get("display_name") or "").strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Place name is required"
+        )
+
+    description = raw_place.get("description")
+    if description is not None:
+        description = str(description).strip() or None
+
+    image_url = raw_place.get("image_url")
+    if image_url is not None:
+        image_url = str(image_url).strip() or None
+
+    category = str(raw_place.get("category") or "Attraction").strip() or "Attraction"
+
+    return Place(
+        name=name,
+        description=description,
+        coordinates={
+            "lat": to_float(lat_raw),
+            "lng": to_float(lng_raw),
+        },
+        rating=to_float(raw_place.get("rating"), 0.0),
+        image_url=image_url,
+        category=category,
+        visit_time=raw_place.get("visit_time"),
+        duration_minutes=raw_place.get("duration_minutes"),
+        travel_minutes_from_previous=raw_place.get("travel_minutes_from_previous"),
+        notes=raw_place.get("notes"),
+        auto_generated_time=raw_place.get("auto_generated_time"),
+    )
 
 def get_user_from_token(authorization: Optional[str] = Header(None)) -> str:
     """Extract user_id from authorization header"""
@@ -128,7 +181,7 @@ async def delete_trip(trip_id: str, authorization: Optional[str] = Header(None))
     return {"message": "Trip deleted successfully"}
 
 @router.post("/{trip_id}/add-place/{day}")
-async def add_place_to_trip(trip_id: str, day: int, place: Place, authorization: Optional[str] = Header(None)):
+async def add_place_to_trip(trip_id: str, day: int, place: Dict[str, Any], authorization: Optional[str] = Header(None)):
     """Add a place to a specific day in itinerary"""
     user_id = get_user_from_token(authorization)
     
@@ -140,7 +193,8 @@ async def add_place_to_trip(trip_id: str, day: int, place: Place, authorization:
             detail="Not authorized to modify this trip"
         )
     
-    updated_trip = TripService.add_place_to_itinerary(trip_id, day, place.model_dump())
+    normalized_place = normalize_place_payload(place)
+    updated_trip = TripService.add_place_to_itinerary(trip_id, day, normalized_place.model_dump())
     if not updated_trip:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

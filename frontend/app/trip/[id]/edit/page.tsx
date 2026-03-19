@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { tripsApi } from '@/lib/api';
 import { ItineraryEditor } from '@/components/ItineraryEditor';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { Save, ChevronLeft } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 
 export default function EditTripPage() {
   const params = useParams();
@@ -14,8 +14,6 @@ export default function EditTripPage() {
 
   const [trip, setTrip] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isPublic, setIsPublic] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     loadTrip();
@@ -25,25 +23,11 @@ export default function EditTripPage() {
     try {
       const response = await tripsApi.getTrip(tripId);
       setTrip(response.data);
-      setIsPublic(response.data.is_public);
     } catch (error) {
       console.error('Failed to load trip:', error);
       router.push('/');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      await tripsApi.updateTrip(tripId, { is_public: isPublic });
-      alert('Trip saved successfully!');
-    } catch (error) {
-      console.error('Failed to save trip:', error);
-      alert('Failed to save trip');
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -79,24 +63,8 @@ export default function EditTripPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isPublic}
-                  onChange={(e) => setIsPublic(e.target.checked)}
-                  className="w-4 h-4"
-                />
-                <span className="text-gray-700">Make Public</span>
-              </label>
-              <button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-              >
-                <Save size={20} />
-                {isSaving ? 'Saving...' : 'Save'}
-              </button>
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700">
+              Publish settings now live in the Finished Trip module.
             </div>
           </div>
         </div>

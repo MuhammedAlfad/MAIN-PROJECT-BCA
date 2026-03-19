@@ -48,12 +48,21 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({ tripId, trip, 
   }, [trip]);
 
   const currentDay = localTrip?.itinerary?.[selectedDay - 1];
+  const normalizePlaceName = (value: string) => value.toLowerCase().trim();
   const currentDayPlaceNames = new Set((currentDay?.places || []).map((p: any) => p.name));
+  const tripPlaceNames = new Set(
+    (localTrip?.itinerary || []).flatMap((day: any) =>
+      (day?.places || []).map((place: any) => normalizePlaceName(place?.name || ''))
+    )
+  );
   const totalAddedPlaces =
     localTrip?.itinerary?.reduce((total: number, day: any) => total + (day?.places?.length || 0), 0) || 0;
 
   const getPlaceKey = (place: any) =>
     `${place.name}|${place.coordinates?.lat ?? ''}|${place.coordinates?.lng ?? ''}`;
+  const visibleRecommendations = recommendations.filter(
+    (place: any) => !tripPlaceNames.has(normalizePlaceName(place?.name || ''))
+  );
 
   // Load recommendations when end location changes - based on end location for better suggestions
   useEffect(() => {
@@ -67,6 +76,12 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({ tripId, trip, 
   useEffect(() => {
     setSelectedRecKeys([]);
   }, [selectedDay, localTrip?.end_location, recommendations.length]);
+
+  useEffect(() => {
+    setSelectedRecKeys((prev) =>
+      prev.filter((key) => visibleRecommendations.some((place: any) => getPlaceKey(place) === key))
+    );
+  }, [localTrip?.itinerary, selectedDay, recommendations]);
 
   useEffect(() => {
     loadTripPathLocations();
@@ -209,7 +224,7 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({ tripId, trip, 
   const handleAddSelectedRecommendations = async () => {
     if (selectedRecKeys.length === 0) return;
 
-    const selectedPlaces = recommendations.filter((place) => selectedRecKeys.includes(getPlaceKey(place)));
+    const selectedPlaces = visibleRecommendations.filter((place) => selectedRecKeys.includes(getPlaceKey(place)));
     if (selectedPlaces.length === 0) return;
 
     setIsAddingSelected(true);
@@ -447,9 +462,9 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({ tripId, trip, 
               <p className="text-xs text-gray-600 mb-2">Select one or more places, then click "Add Selected".</p>
               {isLoadingRecs ? (
                 <p className="text-sm text-gray-600">Loading...</p>
-              ) : recommendations.length > 0 ? (
+              ) : visibleRecommendations.length > 0 ? (
                 <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {recommendations.map((place: any, index: number) => (
+                  {visibleRecommendations.map((place: any, index: number) => (
                     <div key={index} className="bg-white p-2 rounded-lg shadow hover:shadow-md transition text-sm">
                       <div className="flex gap-2">
                         <button
@@ -476,6 +491,8 @@ export const ItineraryEditor: React.FC<ItineraryEditorProps> = ({ tripId, trip, 
                     </div>
                   ))}
                 </div>
+              ) : recommendations.length > 0 ? (
+                <p className="text-sm text-gray-600">All recommended places are already added to this trip</p>
               ) : (
                 <p className="text-sm text-gray-600">No recommendations available</p>
               )}

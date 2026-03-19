@@ -9,10 +9,12 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    otp: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: str
     password: str
+    otp: Optional[str] = None
 
 class UserProfile(BaseModel):
     bio: Optional[str] = None
@@ -44,4 +46,13 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     user: UserResponse
+
+class AuthResponse(BaseModel):
+    requires_otp: bool = False
+    message: Optional[str] = None
+    email: Optional[str] = None
+    otp_expires_in_seconds: Optional[int] = None
+    access_token: Optional[str] = None
+    token_type: Optional[str] = None
+    user: Optional[UserResponse] = None
 

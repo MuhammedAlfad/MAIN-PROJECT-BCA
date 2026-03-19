@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { MapPin, Edit, Trash2, Eye, Lock } from 'lucide-react';
+import { getTripGallery, getTripThumbnail } from '@/components/TripMediaGallery';
 
 interface TripCardProps {
   trip: any;
@@ -15,12 +16,14 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, mode = 'mana
   const startDate = new Date(trip.start_date).toLocaleDateString();
   const endDate = new Date(trip.end_date).toLocaleDateString();
   const isDiscoverMode = mode === 'discover';
+  const thumbnail = getTripThumbnail(trip);
+  const mediaCount = getTripGallery(trip).length;
 
   return (
     <div className="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition">
       <div className="h-40 bg-gradient-to-r from-blue-400 to-blue-600 relative">
-        {trip.cover_image && (
-          <img src={trip.cover_image} alt={trip.title} className="w-full h-full object-cover" />
+        {thumbnail && (
+          <img src={thumbnail} alt={trip.title} className="w-full h-full object-cover" />
         )}
         <div className="absolute top-4 right-4">
           {trip.is_public ? (
@@ -47,10 +50,13 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, mode = 'mana
           <p className="text-sm text-gray-700 mb-4 line-clamp-2">{trip.description}</p>
         )}
 
-        <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
+        <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
           <MapPin size={14} />
           <span>{trip.itinerary?.length || 0} days</span>
         </div>
+        {isDiscoverMode && (
+          <div className="text-xs text-gray-500 mb-4">{mediaCount} media item{mediaCount === 1 ? '' : 's'}</div>
+        )}
 
         <div className="flex gap-2">
           {isDiscoverMode ? (

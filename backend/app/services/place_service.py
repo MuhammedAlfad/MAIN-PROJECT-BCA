@@ -397,6 +397,72 @@ class PlaceService:
         return "Attraction"
 
     @staticmethod
+    def _is_accommodation(tags: Dict[str, str]) -> bool:
+        """Filter out lodging/accommodation POIs from recommendations."""
+        tourism = str(tags.get("tourism") or "").lower().strip()
+        amenity = str(tags.get("amenity") or "").lower().strip()
+        building = str(tags.get("building") or "").lower().strip()
+
+        tourism_lodging = {
+            "hotel",
+            "hostel",
+            "guest_house",
+            "motel",
+            "apartment",
+            "chalet",
+            "alpine_hut",
+            "camp_site",
+            "camp_pitch",
+            "caravan_site",
+        }
+        amenity_lodging = {"hotel", "hostel", "motel"}
+
+        return tourism in tourism_lodging or amenity in amenity_lodging or building == "hotel"
+
+    @staticmethod
+    def _is_tourist_spot(tags: Dict[str, str]) -> bool:
+        """Keep only tourist-focused POIs."""
+        tourism = str(tags.get("tourism") or "").lower().strip()
+        historic = str(tags.get("historic") or "").lower().strip()
+        leisure = str(tags.get("leisure") or "").lower().strip()
+        natural = str(tags.get("natural") or "").lower().strip()
+        boundary = str(tags.get("boundary") or "").lower().strip()
+        water = str(tags.get("water") or "").lower().strip()
+        man_made = str(tags.get("man_made") or "").lower().strip()
+
+        allowed_tourism = {
+            "attraction",
+            "museum",
+            "theme_park",
+            "zoo",
+            "aquarium",
+            "gallery",
+            "viewpoint",
+            "artwork",
+            "picnic_site",
+        }
+        allowed_leisure = {"park", "garden", "nature_reserve"}
+        allowed_natural = {"beach", "peak", "waterfall", "cave"}
+        allowed_water = {"lake", "reservoir"}
+        allowed_man_made = {"tower", "observatory"}
+
+        if tourism in allowed_tourism:
+            return True
+        if historic:
+            return True
+        if leisure in allowed_leisure:
+            return True
+        if natural in allowed_natural:
+            return True
+        if boundary == "national_park":
+            return True
+        if water in allowed_water:
+            return True
+        if man_made in allowed_man_made:
+            return True
+        return False
+
+    @staticmethod
     def _description_from_tags(tags: Dict[str, str], category: str, location: str) -> str:
         """Build a readable description from OSM tags."""
         if tags.get("description"):
@@ -411,7 +477,235 @@ class PlaceService:
             return f"Popular {tags['leisure'].replace('_', ' ')} in {location}"
         if tags.get("natural"):
             return f"Scenic {tags['natural'].replace('_', ' ')} in {location}"
+        if tags.get("boundary") == "national_park":
+            return f"National park near {location}"
+        if tags.get("water"):
+            return f"Scenic {tags['water'].replace('_', ' ')} near {location}"
+        if tags.get("man_made"):
+            return f"Popular {tags['man_made'].replace('_', ' ')} near {location}"
         return f"Popular place to visit in {location}"
+
+    @staticmethod
+    def _overpass_queries(center_lat: float, center_lon: float, radius_m: int, overpass_limit: int) -> List[str]:
+        """Use a primary tourist query and a broader fallback query for sparse areas."""
+        return [
+            f"""
+[out:json][timeout:25];
+(
+  node(around:{radius_m},{center_lat},{center_lon})["tourism"~"attraction|museum|theme_park|zoo|aquarium|gallery|viewpoint|artwork|picnic_site"];
+  way(around:{radius_m},{center_lat},{center_lon})["tourism"~"attraction|museum|theme_park|zoo|aquarium|gallery|viewpoint|artwork|picnic_site"];
+  relation(around:{radius_m},{center_lat},{center_lon})["tourism"~"attraction|museum|theme_park|zoo|aquarium|gallery|viewpoint|artwork|picnic_site"];
+  node(around:{radius_m},{center_lat},{center_lon})["historic"];
+  way(around:{radius_m},{center_lat},{center_lon})["historic"];
+  relation(around:{radius_m},{center_lat},{center_lon})["historic"];
+  node(around:{radius_m},{center_lat},{center_lon})["leisure"~"park|garden|nature_reserve"];
+  way(around:{radius_m},{center_lat},{center_lon})["leisure"~"park|garden|nature_reserve"];
+  relation(around:{radius_m},{center_lat},{center_lon})["leisure"~"park|garden|nature_reserve"];
+  node(around:{radius_m},{center_lat},{center_lon})["natural"~"beach|peak|waterfall|cave"];
+  way(around:{radius_m},{center_lat},{center_lon})["natural"~"beach|peak|waterfall|cave"];
+  relation(around:{radius_m},{center_lat},{center_lon})["natural"~"beach|peak|waterfall|cave"];
+  node(around:{radius_m},{center_lat},{center_lon})["water"~"lake|reservoir"];
+  way(around:{radius_m},{center_lat},{center_lon})["water"~"lake|reservoir"];
+  relation(around:{radius_m},{center_lat},{center_lon})["water"~"lake|reservoir"];
+  node(around:{radius_m},{center_lat},{center_lon})["man_made"~"tower|observatory"];
+  way(around:{radius_m},{center_lat},{center_lon})["man_made"~"tower|observatory"];
+  relation(around:{radius_m},{center_lat},{center_lon})["man_made"~"tower|observatory"];
+  relation(around:{radius_m},{center_lat},{center_lon})["boundary"="national_park"];
+);
+out center {overpass_limit};
+""",
+            f"""
+[out:json][timeout:25];
+(
+  node(around:{radius_m},{center_lat},{center_lon})["tourism"];
+  way(around:{radius_m},{center_lat},{center_lon})["tourism"];
+  relation(around:{radius_m},{center_lat},{center_lon})["tourism"];
+  node(around:{radius_m},{center_lat},{center_lon})["historic"];
+  way(around:{radius_m},{center_lat},{center_lon})["historic"];
+  relation(around:{radius_m},{center_lat},{center_lon})["historic"];
+  node(around:{radius_m},{center_lat},{center_lon})["leisure"];
+  way(around:{radius_m},{center_lat},{center_lon})["leisure"];
+  relation(around:{radius_m},{center_lat},{center_lon})["leisure"];
+  node(around:{radius_m},{center_lat},{center_lon})["natural"];
+  way(around:{radius_m},{center_lat},{center_lon})["natural"];
+  relation(around:{radius_m},{center_lat},{center_lon})["natural"];
+  node(around:{radius_m},{center_lat},{center_lon})["water"];
+  way(around:{radius_m},{center_lat},{center_lon})["water"];
+  relation(around:{radius_m},{center_lat},{center_lon})["water"];
+  node(around:{radius_m},{center_lat},{center_lon})["man_made"];
+  way(around:{radius_m},{center_lat},{center_lon})["man_made"];
+  relation(around:{radius_m},{center_lat},{center_lon})["man_made"];
+  relation(around:{radius_m},{center_lat},{center_lon})["boundary"];
+);
+out center {overpass_limit};
+""",
+        ]
+
+    @staticmethod
+    def _fetch_overpass_elements(
+        center_lat: float,
+        center_lon: float,
+        radius_m: int,
+        overpass_limit: int,
+        headers: Dict[str, str],
+    ) -> List[Dict]:
+        """Try multiple Overpass mirrors and query shapes before giving up."""
+        endpoints = [
+            "https://overpass-api.de/api/interpreter",
+            "https://lz4.overpass-api.de/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter",
+        ]
+
+        for query in PlaceService._overpass_queries(center_lat, center_lon, radius_m, overpass_limit):
+            for endpoint in endpoints:
+                try:
+                    response = requests.post(endpoint, data=query, headers=headers, timeout=25)
+                    if response.status_code != 200:
+                        continue
+                    payload = response.json()
+                    elements = payload.get("elements") or []
+                    if elements:
+                        return elements
+                except Exception:
+                    continue
+        return []
+
+    @staticmethod
+    def _nominatim_fallback_recommendations(
+        location: str,
+        limit: int,
+        center_lat: float,
+        center_lon: float,
+        radius_km: float,
+        headers: Dict[str, str],
+    ) -> List[PlaceRecommendation]:
+        """Fallback search when Overpass is empty or unavailable."""
+        queries = [
+            f"tourist attractions in {location}",
+            f"viewpoints in {location}",
+            f"museums in {location}",
+        ]
+        seen = set()
+        results: List[Dict] = []
+
+        def classify(entry: Dict) -> Optional[Tuple[str, str]]:
+            entry_class = str(entry.get("class") or "").lower().strip()
+            entry_type = str(entry.get("type") or "").lower().strip()
+
+            if entry_type in {"hotel", "hostel", "guest_house", "motel"}:
+                return None
+            if entry_class == "tourism":
+                tourism_map = {
+                    "attraction": "Attraction",
+                    "museum": "Museum",
+                    "theme_park": "Theme Park",
+                    "zoo": "Zoo",
+                    "aquarium": "Aquarium",
+                    "gallery": "Gallery",
+                    "viewpoint": "Viewpoint",
+                    "artwork": "Artwork",
+                    "picnic_site": "Picnic Site",
+                }
+                if entry_type in tourism_map:
+                    return tourism_map[entry_type], f"Popular {entry_type.replace('_', ' ')} in {location}"
+            if entry_class == "historic":
+                return "Historic Site", f"Notable historic site in {location}"
+            if entry_class == "leisure" and entry_type in {"park", "garden", "nature_reserve"}:
+                return entry_type.replace("_", " ").title(), f"Popular {entry_type.replace('_', ' ')} in {location}"
+            if entry_class == "natural" and entry_type in {"beach", "peak", "waterfall", "cave"}:
+                return entry_type.replace("_", " ").title(), f"Scenic {entry_type.replace('_', ' ')} in {location}"
+            if entry_class == "boundary" and entry_type == "national_park":
+                return "National Park", f"National park near {location}"
+            if entry_class == "water" and entry_type in {"lake", "reservoir"}:
+                return entry_type.title(), f"Scenic {entry_type} near {location}"
+            return None
+
+        for query in queries:
+            try:
+                response = requests.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": query, "format": "jsonv2", "limit": max(limit * 4, 30)},
+                    headers=headers,
+                    timeout=10,
+                )
+                if response.status_code != 200:
+                    continue
+                data = response.json()
+            except Exception:
+                continue
+
+            for entry in data or []:
+                classified = classify(entry)
+                if not classified:
+                    continue
+
+                try:
+                    lat = float(entry["lat"])
+                    lon = float(entry["lon"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+
+                distance_km = PlaceService._haversine_km(center_lat, center_lon, lat, lon)
+                if distance_km > radius_km:
+                    continue
+
+                name = (entry.get("name") or entry.get("display_name") or "").split(",")[0].strip()
+                if not name:
+                    continue
+
+                dedupe_key = (name.lower(), round(lat, 3), round(lon, 3))
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+
+                category, description = classified
+                importance = float(entry.get("importance") or 0)
+                rating = max(4.0, min(4.8, 4.1 + importance))
+                results.append(
+                    {
+                        "name": name,
+                        "description": description,
+                        "coordinates": {"lat": lat, "lng": lon},
+                        "rating": rating,
+                        "category": category,
+                        "image_url": None,
+                        "distance_km": distance_km,
+                    }
+                )
+
+            if results:
+                break
+
+        ranked = sorted(results, key=lambda x: (x["distance_km"], -x["rating"]))
+        for place in ranked:
+            place.pop("distance_km", None)
+        return ranked[:limit]
+
+    @staticmethod
+    def _radius_for_location_scope(geocode_entry: Dict) -> int:
+        """Choose search radius by location granularity."""
+        # Nominatim commonly returns addresstype=country/state/county/etc.
+        addresstype = str(geocode_entry.get("addresstype") or "").lower().strip()
+        country_scopes = {"country"}
+        state_scopes = {
+            "state",
+            "province",
+            "region",
+        }
+        district_scopes = {
+            "district",
+            "state_district",
+            "county",
+            "city_district",
+        }
+
+        if addresstype in country_scopes:
+            return 250_000  # 250km for country-level queries
+        if addresstype in state_scopes:
+            return 100_000  # 100km for state-level queries
+        if addresstype in district_scopes:
+            return 50_000  # 50km for district-level queries
+        return 50_000
 
     @staticmethod
     def _worldwide_recommendations(location: str, limit: int = 10) -> List[PlaceRecommendation]:
@@ -420,7 +714,7 @@ class PlaceService:
 
         # 1) Geocode location text to a center point.
         geocode_url = "https://nominatim.openstreetmap.org/search"
-        geocode_params = {"q": location, "format": "json", "limit": 1}
+        geocode_params = {"q": location, "format": "json", "limit": 1, "addressdetails": 1}
         geocode_resp = requests.get(geocode_url, params=geocode_params, headers=headers, timeout=8)
         if geocode_resp.status_code != 200:
             return []
@@ -431,42 +725,31 @@ class PlaceService:
 
         center_lat = float(geocode_data[0]["lat"])
         center_lon = float(geocode_data[0]["lon"])
+        radius_m = PlaceService._radius_for_location_scope(geocode_data[0])
+        radius_km = radius_m / 1000.0
 
         # 2) Fetch nearby POIs around geocoded center.
-        radius_m = 50000
-        overpass_limit = max(limit * 10, 100)
-        overpass_query = f"""
-[out:json][timeout:25];
-(
-  node(around:{radius_m},{center_lat},{center_lon})["tourism"];
-  way(around:{radius_m},{center_lat},{center_lon})["tourism"];
-  relation(around:{radius_m},{center_lat},{center_lon})["tourism"];
-  node(around:{radius_m},{center_lat},{center_lon})["historic"];
-  way(around:{radius_m},{center_lat},{center_lon})["historic"];
-  relation(around:{radius_m},{center_lat},{center_lon})["historic"];
-  node(around:{radius_m},{center_lat},{center_lon})["leisure"~"park|garden|nature_reserve|beach_resort|marina"];
-  way(around:{radius_m},{center_lat},{center_lon})["leisure"~"park|garden|nature_reserve|beach_resort|marina"];
-  relation(around:{radius_m},{center_lat},{center_lon})["leisure"~"park|garden|nature_reserve|beach_resort|marina"];
-  node(around:{radius_m},{center_lat},{center_lon})["natural"~"beach|peak|waterfall|cave"];
-  way(around:{radius_m},{center_lat},{center_lon})["natural"~"beach|peak|waterfall|cave"];
-  relation(around:{radius_m},{center_lat},{center_lon})["natural"~"beach|peak|waterfall|cave"];
-);
-out center {overpass_limit};
-"""
-        overpass_url = "https://overpass-api.de/api/interpreter"
-        overpass_resp = requests.post(overpass_url, data=overpass_query, headers=headers, timeout=25)
-        if overpass_resp.status_code != 200:
-            return []
-
-        payload = overpass_resp.json()
-        elements = payload.get("elements") or []
+        overpass_limit = max(limit * 20, 200)
+        elements = PlaceService._fetch_overpass_elements(center_lat, center_lon, radius_m, overpass_limit, headers)
         if not elements:
-            return []
+            return PlaceService._nominatim_fallback_recommendations(
+                location,
+                limit,
+                center_lat,
+                center_lon,
+                radius_km,
+                headers,
+            )
 
         places: List[Dict] = []
         seen = set()
         for element in elements:
             tags = element.get("tags") or {}
+            if not PlaceService._is_tourist_spot(tags):
+                continue
+            if PlaceService._is_accommodation(tags):
+                continue
+
             name = (tags.get("name") or "").strip()
             if not name:
                 continue
@@ -488,6 +771,10 @@ out center {overpass_limit};
             seen.add(dedupe_key)
 
             category = PlaceService._category_from_tags(tags)
+            distance_km = PlaceService._haversine_km(center_lat, center_lon, lat, lon)
+            if distance_km > radius_km:
+                continue
+
             places.append(
                 {
                     "name": name,
@@ -496,12 +783,19 @@ out center {overpass_limit};
                     "rating": PlaceService._safe_rating(tags),
                     "category": category,
                     "image_url": None,
-                    "distance_km": PlaceService._haversine_km(center_lat, center_lon, lat, lon),
+                    "distance_km": distance_km,
                 }
             )
 
         if not places:
-            return []
+            return PlaceService._nominatim_fallback_recommendations(
+                location,
+                limit,
+                center_lat,
+                center_lon,
+                radius_km,
+                headers,
+            )
 
         ranked = sorted(places, key=lambda x: (x["distance_km"], -x["rating"]))
         for place in ranked:
@@ -511,82 +805,66 @@ out center {overpass_limit};
     @staticmethod
     def get_recommendations(location: str, limit: int = 10) -> List[PlaceRecommendation]:
         """Get place recommendations for a location"""
+        # Use live geo recommendations first so radius logic is applied.
+        try:
+            live_places = PlaceService._worldwide_recommendations(location, limit)
+            if live_places:
+                return live_places
+        except Exception:
+            # Fall back to local static data below.
+            pass
+
         # Normalize location for lookup
         location_key = PlaceService._normalize_location(location)
         places = []
-        sort_by_distance = False
         
         # Try exact match first
         if location_key in PLACES_DATABASE:
             places = PLACES_DATABASE[location_key]
         else:
-            # Try partial match and common variations
-            matched = False
-            for db_key in PLACES_DATABASE.keys():
-                if location_key in db_key or db_key in location_key:
-                    places = PLACES_DATABASE[db_key]
-                    matched = True
-                    break
-            
             # Try common city name variations
-            if not matched:
-                variations = {
-                    "newyork": "newyork",
-                    "nyc": "newyork", 
-                    "newyorkcity": "newyork",
-                    "boston": "boston",
-                    "london": "london",
-                    "paris": "paris",
-                    "tokyo": "tokyo",
-                    "dubai": "dubai",
-                    "ghana": "ghana",
-                    "india": "india",
-                    "brazil": "brazil",
-                    "brasil": "brazil",
-                    "rio": "brazil",
-                    "riodejaneiro": "brazil",
-                    "saopaulo": "brazil",
-                    "saopaulocity": "brazil",
-                    "kolkata": "india",
-                    "calcuta": "india",
-                    "calcutta": "india",
-                    "newdelhi": "india",
-                    "delhi": "india",
-                    "mumbai": "india",
-                    "agra": "india",
-                    "jaipur": "india",
-                    "varanasi": "india",
-                    "usa": "newyork",  # Default to New York for USA
-                    "uk": "london",    # Default to London for UK
-                    "france": "paris",  # Default to Paris for France
-                    "japan": "tokyo",   # Default to Tokyo for Japan
-                    "uae": "dubai"      # Default to Dubai for UAE
-                }
-                
-                for variation, match_key in variations.items():
-                    if location_key == variation:
-                        if match_key in PLACES_DATABASE:
-                            places = PLACES_DATABASE[match_key]
-                            matched = True
-                            break
+            variations = {
+                "newyork": "newyork",
+                "nyc": "newyork", 
+                "newyorkcity": "newyork",
+                "boston": "boston",
+                "london": "london",
+                "paris": "paris",
+                "tokyo": "tokyo",
+                "dubai": "dubai",
+                "ghana": "ghana",
+                "india": "india",
+                "brazil": "brazil",
+                "brasil": "brazil",
+                "rio": "brazil",
+                "riodejaneiro": "brazil",
+                "saopaulo": "brazil",
+                "saopaulocity": "brazil",
+                "kolkata": "india",
+                "calcuta": "india",
+                "calcutta": "india",
+                "newdelhi": "india",
+                "delhi": "india",
+                "mumbai": "india",
+                "agra": "india",
+                "jaipur": "india",
+                "varanasi": "india",
+                "usa": "newyork",  # Default to New York for USA
+                "uk": "london",    # Default to London for UK
+                "france": "paris",  # Default to Paris for France
+                "japan": "tokyo",   # Default to Tokyo for Japan
+                "uae": "dubai"      # Default to Dubai for UAE
+            }
             
-            # If still no match found in static DB, fetch worldwide live recommendations.
-            if not matched:
-                try:
-                    live_places = PlaceService._worldwide_recommendations(location, limit)
-                    if live_places:
-                        return live_places
-                    places = []
-                except Exception:
-                    # On any failure, fall back to empty list (no suggestions)
-                    places = []
+            match_key = variations.get(location_key)
+            if match_key and match_key in PLACES_DATABASE:
+                places = PLACES_DATABASE[match_key]
+            else:
+                places = []
         
         # Sort by rating and return top places
         if not places:
             return []
-
-        if sort_by_distance:
-            return places[:limit]
 
         sorted_places = sorted(places, key=lambda x: x["rating"], reverse=True)
         return sorted_places[:limit]
