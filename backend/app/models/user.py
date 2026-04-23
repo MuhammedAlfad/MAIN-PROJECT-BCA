@@ -27,6 +27,12 @@ class UserProfileUpdate(BaseModel):
     bio: Optional[str] = None
     profile_picture: Optional[str] = None
 
+class AdminUserUpdate(BaseModel):
+    email: Optional[str] = None
+    username: Optional[str] = None
+    bio: Optional[str] = None
+    profile_picture: Optional[str] = None
+
 class User(UserBase):
     id: str
     profile: UserProfile
@@ -41,6 +47,20 @@ class UserResponse(BaseModel):
     username: str
     profile: UserProfile
     created_at: datetime
+
+class AdminUserResponse(UserResponse):
+    trip_count: int = 0
+    is_admin: bool = False
+
+class AdminUsersSummary(BaseModel):
+    total_users: int
+    admin_users: int
+    regular_users: int
+    total_trips: int
+
+class AdminUsersResponse(BaseModel):
+    summary: AdminUsersSummary
+    users: List[AdminUserResponse]
 
 class Token(BaseModel):
     access_token: str

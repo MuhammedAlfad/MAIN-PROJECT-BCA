@@ -890,9 +890,9 @@ export default function HomePage() {
       });
       syncTripLocally(res.data);
       await loadPublicTrips();
-      setMessage(finishedChecked ? 'Finished trip updated.' : 'Trip saved without publishing.');
+      setMessage(finishedChecked ? 'Publish Trip updated.' : 'Trip saved without publishing.');
     } catch (e: any) {
-      setError(e?.response?.data?.detail || e?.message || 'Failed to update finished trip');
+      setError(e?.response?.data?.detail || e?.message || 'Failed to update Publish Trip');
     } finally {
       setFinishedSaving(false);
     }
@@ -1046,7 +1046,7 @@ export default function HomePage() {
               }`}
             >
               <Flag size={18} />
-              <span className="font-medium">Finished Trip</span>
+              <span className="font-medium">Publish Trip</span>
             </button>
 
             <div className="mt-5 px-2 text-xs uppercase tracking-[0.12em] text-slate-500">Saved Trips</div>
@@ -1531,9 +1531,9 @@ export default function HomePage() {
                               />
                             </div>
                             <div>
-                              <label className="block text-sm text-slate-300 mb-1">Finished Trip</label>
+                              <label className="block text-sm text-slate-300 mb-1">Publish Trip</label>
                               <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-300">
-                                Photos, videos, thumbnail, and public discovery settings now live in `Finished Trip`.
+                                Photos, videos, thumbnail, and public discovery settings now live in `Publish Trip`.
                               </div>
                             </div>
                           </div>
@@ -1576,7 +1576,7 @@ export default function HomePage() {
                               onClick={openFinishedPane}
                               className="rounded-lg border border-white/15 px-4 py-2 text-sm text-slate-200 hover:bg-white/10"
                             >
-                              Manage Finished Trip
+                              Manage Publish Trip
                             </button>
                             <button
                               type="button"
@@ -1784,7 +1784,7 @@ export default function HomePage() {
                     <div ref={finishedEditorRef} className="rounded-3xl border border-white/10 bg-[#12161d]/90 p-6 md:p-8 space-y-5">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div>
-                          <div className="text-xs uppercase tracking-[0.12em] text-slate-500">Finished Trip</div>
+                          <div className="text-xs uppercase tracking-[0.12em] text-slate-500">Publish Trip</div>
                           <h2 className="mt-1 text-3xl font-semibold">{finishedSelectedTrip.title}</h2>
                           <p className="mt-2 text-sm text-slate-300">
                             {finishedSelectedTrip.start_location} to {finishedSelectedTrip.end_location}
@@ -1808,7 +1808,7 @@ export default function HomePage() {
                             className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-60"
                           >
                             {finishedSaving ? <Loader2 size={15} className="animate-spin" /> : <Flag size={15} />}
-                            Save Finished Trip
+                            Save Publish Trip
                           </button>
                         </div>
                       </div>
@@ -1861,7 +1861,7 @@ export default function HomePage() {
                                 </div>
                                 <div className="mt-3 space-y-3">
                                   <p className="text-xs text-slate-500">
-                                    Browse image files from your PC and upload them to this finished trip.
+                                    Browse image files from your PC and upload them to this trip's publish gallery.
                                   </p>
                                   <label className="block rounded-xl border border-dashed border-white/15 bg-[#0d1118] px-3 py-3 text-sm text-slate-300 cursor-pointer hover:border-sky-400/40">
                                     Upload image file
@@ -1886,7 +1886,7 @@ export default function HomePage() {
                                 </div>
                                 <div className="mt-3 space-y-3">
                                   <p className="text-xs text-slate-500">
-                                    Browse video files from your PC and upload them to this finished trip.
+                                    Browse video files from your PC and upload them to this trip's publish gallery.
                                   </p>
                                   <label className="block rounded-xl border border-dashed border-white/15 bg-[#0d1118] px-3 py-3 text-sm text-slate-300 cursor-pointer hover:border-sky-400/40">
                                     Upload video file
@@ -1955,7 +1955,7 @@ export default function HomePage() {
                             <div className="rounded-xl border border-white/10 bg-white/5 p-4">
                               <div className="text-sm font-semibold text-slate-100">Feedback</div>
                               <p className="mt-2 text-xs text-slate-500">
-                                Add your finished-trip feedback or overall experience for this itinerary.
+                                Add feedback or your overall experience for this trip before publishing.
                               </p>
                               <textarea
                                 value={finishedFeedback}
@@ -1996,7 +1996,7 @@ export default function HomePage() {
                                 onChange={(e) => setFinishedPublic(e.target.checked)}
                                 className="accent-sky-500"
                               />
-                              Show this finished trip in Discovery
+                              Show this published trip in Discovery
                             </label>
 
                             <div className="grid grid-cols-2 gap-3">
@@ -2013,7 +2013,7 @@ export default function HomePage() {
                             </div>
 
                             <div className="rounded-xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-                              Discovery now shows only trips marked as finished and then made public here.
+                              Discovery now shows only trips marked as finished and then published here.
                             </div>
                           </div>
                         </div>
@@ -2024,8 +2024,8 @@ export default function HomePage() {
                           ...finishedSelectedTrip,
                           cover_image: finishedCoverImage.trim() || finishedSelectedTrip.cover_image,
                         }}
-                        title="Finished Trip Gallery"
-                        emptyText="Add images or videos above to build the finished trip gallery."
+                        title="Publish Trip Gallery"
+                        emptyText="Add images or videos above to build the publish trip gallery."
                       />
                     </div>
                   ) : (
@@ -2033,7 +2033,7 @@ export default function HomePage() {
                       <div>
                         <div className="text-xs uppercase tracking-[0.12em] text-slate-500">Trip Tiles</div>
                         <div className="mt-1 text-sm text-slate-300">
-                          Click a tile to replace this view with that trip&apos;s finished-trip editor.
+                          Click a tile to replace this view with that trip&apos;s Publish Trip editor.
                         </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -2126,7 +2126,7 @@ export default function HomePage() {
                           <TripMediaGallery
                             trip={discoverViewedTrip}
                             title="Trip Gallery"
-                            emptyText="This finished trip does not have photos or videos yet."
+                            emptyText="This published trip does not have photos or videos yet."
                           />
 
                           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -2290,7 +2290,7 @@ export default function HomePage() {
                       <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
                         <div>
                           <h2 className="text-3xl font-semibold">Discover Trips</h2>
-                          <p className="text-sm text-slate-400">Browse finished trips that travelers have chosen to publish.</p>
+                          <p className="text-sm text-slate-400">Browse trips that travelers have chosen to publish.</p>
                         </div>
                         <button type="button" onClick={loadPublicTrips} className="rounded-lg border border-white/15 px-4 py-2 text-sm text-slate-200 hover:bg-white/10">Refresh</button>
                       </div>
@@ -2329,13 +2329,13 @@ export default function HomePage() {
                                     <h3 className="text-xl font-semibold">{trip.title}</h3>
                                     <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">
                                       <Globe2 size={12} />
-                                      Finished
+                                      Published
                                     </span>
                                   </div>
                                   <p className="mt-2 text-sm text-slate-300">{trip.start_location} to {trip.end_location}</p>
                                   <p className="text-xs text-slate-400 mt-1">{fmtDate(trip.start_date)} to {fmtDate(trip.end_date)} | {trip.itinerary?.length || 0} days</p>
                                   <p className="mt-3 line-clamp-2 text-sm text-slate-400">
-                                    {trip.description || 'Published finished itinerary with media and route details.'}
+                                    {trip.description || 'Published itinerary with media and route details.'}
                                   </p>
                                   <div className="mt-3 text-xs text-slate-500">
                                     {getTripGallery(trip).length} media item{getTripGallery(trip).length === 1 ? '' : 's'}
@@ -2349,7 +2349,7 @@ export default function HomePage() {
                           })}
                         </div>
                       ) : (
-                        <div className="text-center text-slate-400 py-10">No public finished trips found.</div>
+                        <div className="text-center text-slate-400 py-10">No published trips found.</div>
                       )}
                     </div>
                   )}
@@ -2418,11 +2418,11 @@ export default function HomePage() {
                         <div className="mt-2 text-2xl font-semibold text-slate-100">{trips.length}</div>
                       </div>
                       <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                        <div className="text-xs text-slate-400 uppercase tracking-[0.1em]">Finished Trips</div>
+                        <div className="text-xs text-slate-400 uppercase tracking-[0.1em]">Publish Trips</div>
                         <div className="mt-2 text-2xl font-semibold text-slate-100">{finishedTripsCount}</div>
                       </div>
                       <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                        <div className="text-xs text-slate-400 uppercase tracking-[0.1em]">Public Finished Trips</div>
+                        <div className="text-xs text-slate-400 uppercase tracking-[0.1em]">Published Trips</div>
                         <div className="mt-2 text-2xl font-semibold text-slate-100">{publicTripsCount}</div>
                       </div>
                     </div>

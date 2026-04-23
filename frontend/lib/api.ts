@@ -60,6 +60,31 @@ export interface AuthApiResponse {
   user?: any;
 }
 
+export interface AdminUser {
+  id: string;
+  email: string;
+  username: string;
+  created_at: string;
+  trip_count: number;
+  is_admin: boolean;
+  profile: {
+    bio?: string;
+    profile_picture?: string | null;
+    followers?: number;
+    following?: number;
+  };
+}
+
+export interface AdminUsersResponse {
+  summary: {
+    total_users: number;
+    admin_users: number;
+    regular_users: number;
+    total_trips: number;
+  };
+  users: AdminUser[];
+}
+
 export const authApi = {
   register: (email: string, username: string, password: string, otp?: string) =>
     apiClient.post<AuthApiResponse>('/api/auth/register', {
@@ -78,6 +103,12 @@ export const authApi = {
     apiClient.post('/api/auth/verify-token', { token }),
   updateProfile: (profileData: { username?: string; bio?: string; profile_picture?: string | null }) =>
     apiClient.put('/api/auth/profile', profileData),
+  getAdminUsers: () =>
+    apiClient.get<AdminUsersResponse>('/api/auth/admin/users'),
+  updateAdminUser: (userId: string, userData: { email?: string; username?: string; bio?: string; profile_picture?: string | null }) =>
+    apiClient.put<AdminUser>(`/api/auth/admin/users/${userId}`, userData),
+  deleteAdminUser: (userId: string) =>
+    apiClient.delete(`/api/auth/admin/users/${userId}`),
 };
 
 export const tripsApi = {

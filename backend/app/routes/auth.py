@@ -1,10 +1,17 @@
 from fastapi import APIRouter, HTTPException, status, Header
 from pydantic import BaseModel
 from typing import Optional
-from app.models.user import AuthResponse, UserCreate, UserLogin, UserProfileUpdate, UserResponse
+from app.models.user import (
+    AdminUserResponse,
+    AdminUsersResponse,
+    AdminUserUpdate,
+    AuthResponse,
+    UserCreate,
+    UserLogin,
+    UserProfileUpdate,
+    UserResponse,
+)
 from app.services.auth_service import AuthService
-from app.database import db
-from bson import ObjectId
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -59,6 +66,16 @@ def get_user_from_token(authorization: Optional[str] = Header(None)) -> str:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authorization: {str(e)}"
         )
+
+
+def require_admin_user(authorization: Optional[str] = Header(None)) -> str:
+    user_id = get_user_from_token(authorization)
+    if not AuthService.is_admin_user(user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return user_id
 
 @router.post("/register", response_model=AuthResponse)
 async def register(user_data: UserCreate):
@@ -201,3 +218,67 @@ async def update_profile(profile_data: UserProfileUpdate, authorization: Optiona
         profile=updated_user["profile"],
         created_at=updated_user["created_at"]
     )
+
+
+@router.get("/admin/users", response_model=AdminUsersResponse)
+async def get_admin_users(authorization: Optional[str] = Header(None)):
+    """Get admin user management data."""
+    require_admin_user(authorization)
+    return AuthService.get_admin_users()
+
+
+@router.put("/admin/users/{user_id}", response_model=AdminUserResponse)
+async def update_admin_user(
+    user_id: str,
+    user_data: AdminUserUpdate,
+    authorization: Optional[str] = Header(None),
+):
+    """Update a user from the admin panel."""
+    require_admin_user(authorization)
+
+    try:
+        updated_user = AuthService.admin_update_user(
+            user_id=user_id,
+            email=user_data.email,
+            username=user_data.username,
+            bio=user_data.bio,
+            profile_picture=user_data.profile_picture,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    if not updated_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    return updated_user
+
+
+@router.delete("/admin/users/{user_id}")
+async def delete_admin_user(user_id: str, authorization: Optional[str] = Header(None)):
+    """Delete a user and their trips from the admin panel."""
+    require_admin_user(authorization)
+
+    try:
+        deleted = AuthService.delete_user(user_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    return {
+        "message": "User deleted successfully",
+        **deleted,
+    }
